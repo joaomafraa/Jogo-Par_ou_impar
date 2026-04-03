@@ -10,7 +10,7 @@ const rootDir = join(__dirname, "..");
 const distDir = join(rootDir, "dist");
 
 const PORT = Number(process.env.PORT || 3001);
-const ROUND_TIME_MS = 10_000;
+const ROUND_TIME_MS = 25_000;
 const READY_DELAY_MS = 1_200;
 
 const app = express();
@@ -34,23 +34,32 @@ function createInitialRoom() {
     round: 1,
     result: null,
     deadlineAt: null,
+    parityOwnerSlot: null,
+    parityChoice: null,
     infoMessage: "Aguardando 2 jogadores na sala.",
     startTimeout: null,
     resolveTimeout: null,
   };
 }
 
-function createSelection() {
-  return {
-    number: Math.floor(Math.random() * 6),
-    parity: Math.random() > 0.5 ? "odd" : "even",
-    auto: true,
-  };
+function assignSlot() {
+  const usedSlots = new Set(
+    room.players.filter((player) => !player.spectator).map((player) => player.slot),
+  );
+
+  return usedSlots.has(0) ? (usedSlots.has(1) ? null : 1) : 0;
 }
 
-function assignSlot() {
-  const usedSlots = new Set(room.players.filter((player) => !player.spectator).map((player) => player.slot));
-  return usedSlots.has(0) ? (usedSlots.has(1) ? null : 1) : 0;
+function getOppositeParity(parity) {
+  return parity === "odd" ? "even" : "odd";
+}
+
+function getAssignedParity(player) {
+  if (player.spectator || room.parityOwnerSlot === null || room.parityChoice === null) {
+    return null;
+  }
+
+  return player.slot === room.parityOwnerSlot ? room.parityChoice : getOppositeParity(room.parityChoice);
 }
 
 function getPublicPlayer(player) {
@@ -63,12 +72,14 @@ function getPublicPlayer(player) {
     ready: player.ready,
     submitted: player.submitted,
     selection: player.selection,
+    assignedParity: getAssignedParity(player),
     name: player.name,
   };
 }
 
 function buildState() {
   const activePlayers = room.players.filter((player) => !player.spectator);
+
   return {
     phase: room.phase,
     round: room.round,
@@ -97,7 +108,7 @@ function clearTimers() {
   }
 }
 
-function resetSelections() {
+function resetRoundSelections() {
   room.players.forEach((player) => {
     if (player.spectator) {
       return;
@@ -106,6 +117,9 @@ function resetSelections() {
     player.submitted = false;
     player.selection = null;
   });
+
+  room.parityOwnerSlot = null;
+  room.parityChoice = null;
 }
 
 function getActivePlayers() {
@@ -119,17 +133,16 @@ function allPlayersReady() {
 
 function setWaitingState(message = "Aguardando 2 jogadores na sala.") {
   clearTimers();
-  room.phase = getActivePlayers().length < 2 ? "waiting" : "waiting";
+  room.phase = "waiting";
   room.deadlineAt = null;
   room.result = null;
   room.infoMessage = message;
   room.players.forEach((player) => {
     if (!player.spectator) {
       player.ready = false;
-      player.submitted = false;
-      player.selection = null;
     }
   });
+  resetRoundSelections();
   emitState();
 }
 
@@ -138,8 +151,8 @@ function startRound() {
   room.phase = "playing";
   room.result = null;
   room.deadlineAt = Date.now() + ROUND_TIME_MS;
-  room.infoMessage = "Rodada ativa. Escolha numero e lado antes do tempo acabar.";
-  resetSelections();
+  room.infoMessage = "Rodada ativa. O primeiro a escolher impar ou par fica com a escolha.";
+  resetRoundSelections();
   emitState();
 
   room.resolveTimeout = setTimeout(() => {
@@ -164,6 +177,31 @@ function maybeStartRound() {
   }, READY_DELAY_MS);
 }
 
+function applyParityChoice(player, desiredParity) {
+  if (room.phase !== "playing" || player.spectator) {
+    return false;
+  }
+
+  const parity = desiredParity === "even" ? "even" : "odd";
+  if (room.parityOwnerSlot === null || room.parityOwnerSlot === player.slot) {
+    room.parityOwnerSlot = player.slot;
+    room.parityChoice = parity;
+    room.infoMessage = `${player.name} travou ${parity === "odd" ? "impar" : "par"} primeiro.`;
+    return true;
+  }
+
+  return false;
+}
+
+function createAutoSelection(player, fallbackIndex) {
+  const assignedParity = getAssignedParity(player) || (fallbackIndex === 0 ? "odd" : "even");
+  return {
+    number: Math.floor(Math.random() * 6),
+    parity: assignedParity,
+    auto: true,
+  };
+}
+
 function resolveRound(reason = "submitted") {
   if (room.phase !== "playing") {
     return;
@@ -171,30 +209,37 @@ function resolveRound(reason = "submitted") {
 
   clearTimers();
   const players = room.players.filter((player) => !player.spectator);
-  for (const player of players) {
-    if (!player.selection) {
-      player.selection = createSelection();
-      player.submitted = true;
-    }
+
+  if (room.parityOwnerSlot === null) {
+    room.parityOwnerSlot = players[0]?.slot ?? 0;
+    room.parityChoice = "odd";
   }
 
-  const [playerOne, playerTwo] = players;
-  const sum = (playerOne.selection?.number || 0) + (playerTwo.selection?.number || 0);
+  players.forEach((player, index) => {
+    const assignedParity = getAssignedParity(player) || (index === 0 ? "odd" : "even");
+    if (!player.selection) {
+      player.selection = createAutoSelection(player, index);
+    }
+
+    player.selection.parity = assignedParity;
+    player.submitted = true;
+  });
+
+  const sum = players.reduce((accumulator, player) => accumulator + (player.selection?.number || 0), 0);
   const parity = sum % 2 === 0 ? "even" : "odd";
-  const winners = players.filter((player) => player.selection?.parity === parity);
+  const winner = players.find((player) => player.selection?.parity === parity) || null;
 
   room.phase = "result";
   room.deadlineAt = null;
   room.result = {
     sum,
     parity,
-    winnerSlot: winners.length === 1 ? winners[0].slot : null,
+    winnerSlot: winner?.slot ?? null,
     reason,
   };
-  room.infoMessage =
-    winners.length === 1
-      ? `Resultado fechado. ${winners[0].name} venceu a rodada.`
-      : "Resultado fechado. A rodada terminou empatada.";
+  room.infoMessage = winner
+    ? `Resultado fechado. ${winner.name} venceu a rodada.`
+    : "Resultado fechado.";
 
   players.forEach((player) => {
     player.ready = false;
@@ -208,12 +253,12 @@ function getPlayerBySocket(socketId) {
 }
 
 function canSubmitSelection(player) {
-  return (
+  return Boolean(
     player &&
-    !player.spectator &&
-    player.connected &&
-    room.phase === "playing" &&
-    !player.submitted
+      !player.spectator &&
+      player.connected &&
+      room.phase === "playing" &&
+      !player.submitted,
   );
 }
 
@@ -240,7 +285,7 @@ io.on("connection", (socket) => {
   room.players.push(player);
   room.infoMessage = spectator
     ? "Sala cheia. Aguarde uma vaga para entrar na partida."
-    : "Jogador conectado. Aguardando confirmacao.";
+    : `${player.name} entrou na sala.`;
   emitState();
 
   socket.emit("player:meta", {
@@ -251,11 +296,7 @@ io.on("connection", (socket) => {
 
   socket.on("player:ready", (payload) => {
     const currentPlayer = getPlayerBySocket(socket.id);
-    if (!currentPlayer || currentPlayer.spectator) {
-      return;
-    }
-
-    if (room.phase === "playing") {
+    if (!currentPlayer || currentPlayer.spectator || room.phase === "playing") {
       return;
     }
 
@@ -268,6 +309,18 @@ io.on("connection", (socket) => {
     maybeStartRound();
   });
 
+  socket.on("player:pick-parity", (payload) => {
+    const currentPlayer = getPlayerBySocket(socket.id);
+    if (!currentPlayer || currentPlayer.spectator || currentPlayer.submitted) {
+      return;
+    }
+
+    const changed = applyParityChoice(currentPlayer, payload?.parity);
+    if (changed) {
+      emitState();
+    }
+  });
+
   socket.on("player:submit", (payload) => {
     const currentPlayer = getPlayerBySocket(socket.id);
     if (!canSubmitSelection(currentPlayer)) {
@@ -275,14 +328,22 @@ io.on("connection", (socket) => {
     }
 
     const number = Number(payload?.number);
-    const parity = payload?.parity === "even" ? "even" : "odd";
     if (!Number.isInteger(number) || number < 0 || number > 5) {
+      return;
+    }
+
+    if (room.parityOwnerSlot === null) {
+      applyParityChoice(currentPlayer, payload?.parity);
+    }
+
+    const assignedParity = getAssignedParity(currentPlayer);
+    if (!assignedParity) {
       return;
     }
 
     currentPlayer.selection = {
       number,
-      parity,
+      parity: assignedParity,
       auto: false,
     };
     currentPlayer.submitted = true;
@@ -308,7 +369,7 @@ io.on("connection", (socket) => {
 
     if (!currentPlayer.spectator) {
       if (room.phase === "playing") {
-        setWaitingState("Um jogador desconectou. A partida foi reiniciada.");
+        setWaitingState("Um jogador desconectou. A rodada foi reiniciada.");
         return;
       }
 
