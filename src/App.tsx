@@ -13,18 +13,14 @@ import type { ParityChoice, ResultVisualState, UiVariant } from "./components/ui
 type AppView = "home" | "joining" | "in-room" | "expired";
 type GamePhase = "waiting" | "ready" | "playing" | "result";
 type GameModeKey = "odd-even" | "rps";
-
-interface GameModeItem {
-  key: GameModeKey;
-  label: string;
-  status: "active" | "coming-soon";
-}
+type RpsChoice = "rock" | "paper" | "scissors";
 
 interface HistoryItem {
   round: number;
+  mode: GameModeKey;
   createdAt: number;
-  sum: number;
-  parity: ParityChoice;
+  sum: number | null;
+  parity: ParityChoice | null;
   winnerSlot: number | null;
   winnerName: string | null;
   reason: "submitted" | "timeout" | "disconnect";
@@ -33,8 +29,16 @@ interface HistoryItem {
     name: string;
     number: number | null;
     parity: ParityChoice | null;
+    choice: RpsChoice | null;
     auto: boolean;
   }>;
+}
+
+interface NetworkSelection {
+  number: number | null;
+  parity: ParityChoice | null;
+  choice: RpsChoice | null;
+  auto: boolean;
 }
 
 interface NetworkPlayer {
@@ -46,25 +50,25 @@ interface NetworkPlayer {
   ready: boolean;
   submitted: boolean;
   assignedParity: ParityChoice | null;
-  selection: {
-    number: number;
-    parity: ParityChoice;
-    auto: boolean;
-  } | null;
+  selection: NetworkSelection | null;
   name: string;
 }
 
 interface NetworkResult {
-  sum: number;
-  parity: ParityChoice;
+  mode: GameModeKey;
+  sum: number | null;
+  parity: ParityChoice | null;
   winnerSlot: number | null;
   reason: "submitted" | "timeout" | "disconnect";
+  outcome: "win" | "draw";
 }
 
 interface GameState {
   phase: GamePhase;
   round: number;
   roomCode: string;
+  mode: GameModeKey;
+  modeConfirmedSlots: number[];
   serverTime: number;
   deadlineAt: number | null;
   result: NetworkResult | null;
@@ -83,10 +87,6 @@ interface PlayerMeta {
 
 const socketUrl = import.meta.env.VITE_SOCKET_URL || undefined;
 const defaultParity: ParityChoice = "odd";
-const gameModes: GameModeItem[] = [
-  { key: "odd-even", label: "Impar ou Par", status: "active" },
-  { key: "rps", label: "Pedra Papel Tesoura", status: "coming-soon" },
-];
 
 function getRoomCodeFromPath() {
   const match = window.location.pathname.match(/^\/sala\/([A-Za-z0-9_-]+)$/);
@@ -128,6 +128,17 @@ function formatPhaseTitle(phase: GamePhase) {
   return "Resultado da rodada";
 }
 
+function formatModeLabel(mode: GameModeKey) {
+  return mode === "rps" ? "Pedra Papel Tesoura" : "Impar ou Par";
+}
+
+function formatRpsChoice(choice: RpsChoice | null | undefined) {
+  if (!choice) return "--";
+  if (choice === "rock") return "Pedra";
+  if (choice === "paper") return "Papel";
+  return "Tesoura";
+}
+
 function getResultCopy(reason: NetworkResult["reason"]) {
   if (reason === "submitted") return "As duas jogadas chegaram antes do tempo.";
   if (reason === "timeout") return "O tempo acabou e a rodada foi fechada automaticamente.";
@@ -144,44 +155,47 @@ function OddEvenIcon() {
   );
 }
 
-function RpsIcon() {
+function RpsModeIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
       <circle cx="6.7" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M11 6.2h4.5l1.6 1.6v3.5H11z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M7.6 16.8l2.2-2.2 1.9 1.9-2.2 2.2c-.5.5-1.4.5-1.9 0s-.5-1.4 0-1.9Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M12.2 14.1l4.1 4.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M14.6 11.3h3.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.7" />
     </svg>
   );
 }
 
-function ModeSidebar() {
+function RockIcon() {
   return (
-    <aside className="mode-sidebar">
-      <span className="mode-sidebar-label">Jogos</span>
-      <nav className="mode-nav" aria-label="Modos de jogo">
-        {gameModes.map((mode) => {
-          const isActive = mode.status === "active";
-          return (
-            <button
-              key={mode.key}
-              type="button"
-              disabled={!isActive}
-              className={`mode-link ${isActive ? "mode-link--active" : "mode-link--soon"}`}
-              aria-label={mode.label}
-              title={mode.label}
-            >
-              <span className={`mode-link-icon ${isActive ? "text-accent shadow-[0_0_18px_rgba(0,255,163,0.18)]" : "text-secondary"}`}>
-                {mode.key === "odd-even" ? <OddEvenIcon /> : <RpsIcon />}
-              </span>
-              <span className="mode-link-text">{isActive ? "Ao vivo" : "Em breve"}</span>
-              <span className="mode-tooltip">{mode.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-    </aside>
+    <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" aria-hidden="true">
+      <path d="M7 14.8c0-2 1.5-3.6 3.4-3.6h3.2c1.9 0 3.4 1.6 3.4 3.6v.8c0 1.8-1.4 3.2-3.2 3.2H10.2c-1.8 0-3.2-1.4-3.2-3.2z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M9.6 11V8.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M12 10.8V7.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M14.4 11.2V8.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PaperIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" aria-hidden="true">
+      <path d="M8 5.8h6l3 3v9.4c0 1-.8 1.8-1.8 1.8H8c-1 0-1.8-.8-1.8-1.8V7.6C6.2 6.6 7 5.8 8 5.8Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M14 5.8v3.6h3" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M9.4 12h4.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M9.4 15h5.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ScissorsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" aria-hidden="true">
+      <circle cx="8" cy="16.5" r="2.4" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="8" cy="7.5" r="2.4" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M10.2 9.1 18 4.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M10.2 14.9 18 19.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -214,7 +228,10 @@ function HistoryFeed({ history }: { history: HistoryItem[] }) {
                     <p className="eyebrow">Round {item.round}</p>
                     <p className="mt-2 text-base font-semibold text-white">{item.winnerName ? `${item.winnerName} venceu` : "Rodada finalizada"}</p>
                   </div>
-                  <StatusPill label={`Soma ${item.sum} - ${formatParityLabel(item.parity)}`} variant="success" size="sm" />
+                  <div className="flex flex-wrap gap-2">
+                    <StatusPill label={formatModeLabel(item.mode)} variant="active" size="sm" />
+                    {item.mode === "odd-even" ? <StatusPill label={`Soma ${item.sum} - ${formatParityLabel(item.parity)}`} variant="success" size="sm" /> : null}
+                  </div>
                 </div>
                 <div className="mt-4 space-y-2">
                   {item.players.map((player) => (
@@ -223,7 +240,11 @@ function HistoryFeed({ history }: { history: HistoryItem[] }) {
                       className="flex items-center justify-between gap-3 rounded-[18px] border border-white/10 bg-black/20 px-3 py-2"
                     >
                       <p className="text-sm font-medium text-white">{player.name}</p>
-                      <p className="text-sm text-white/68">{formatParityLabel(player.parity)} - {player.number ?? "--"}{player.auto ? " - auto" : ""}</p>
+                      <p className="text-sm text-white/68">
+                        {item.mode === "rps"
+                          ? `${formatRpsChoice(player.choice)}${player.auto ? " - auto" : ""}`
+                          : `${formatParityLabel(player.parity)} - ${player.number ?? "--"}${player.auto ? " - auto" : ""}`}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -303,6 +324,186 @@ function ReadySummaryCard({
   );
 }
 
+function ModeConfirmCard({
+  mode,
+  confirmedSlots,
+  currentSlot,
+  canConfirm,
+  onConfirm,
+}: {
+  mode: GameModeKey;
+  confirmedSlots: number[];
+  currentSlot: number | null | undefined;
+  canConfirm: boolean;
+  onConfirm: () => void;
+}) {
+  const selfConfirmed = currentSlot !== null && currentSlot !== undefined && confirmedSlots.includes(currentSlot);
+  const bothConfirmed = confirmedSlots.length === 2;
+
+  return (
+    <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+      <div className="flex flex-col gap-4 text-left">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="eyebrow">Modo da sala</p>
+            <h3 className="mt-2 font-display text-2xl text-white">{formatModeLabel(mode)}</h3>
+            <p className="mt-3 text-sm leading-6 text-white/72">
+              Os dois jogadores precisam confirmar o modo antes de marcar pronto.
+            </p>
+          </div>
+          <StatusPill label={bothConfirmed ? "Confirmado" : "Pendente"} variant={bothConfirmed ? "success" : "active"} size="sm" />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusPill label={confirmedSlots.includes(0) ? "Jogador 1 confirmou" : "Jogador 1 pendente"} variant={confirmedSlots.includes(0) ? "success" : "default"} size="sm" />
+          <StatusPill label={confirmedSlots.includes(1) ? "Jogador 2 confirmou" : "Jogador 2 pendente"} variant={confirmedSlots.includes(1) ? "success" : "default"} size="sm" />
+        </div>
+        <PrimaryAction variant={selfConfirmed ? "success" : "active"} size="md" disabled={!canConfirm || selfConfirmed} onClick={onConfirm}>
+          {selfConfirmed ? "Modo confirmado" : "Confirmar modo"}
+        </PrimaryAction>
+      </div>
+    </div>
+  );
+}
+
+function RpsChoiceCard({
+  choice,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  choice: RpsChoice;
+  selected: boolean;
+  disabled: boolean;
+  onSelect: (choice: RpsChoice) => void;
+}) {
+  const label = formatRpsChoice(choice);
+  const Icon = choice === "rock" ? RockIcon : choice === "paper" ? PaperIcon : ScissorsIcon;
+
+  return (
+    <motion.button
+      type="button"
+      whileHover={disabled ? undefined : { y: -4, scale: 1.02 }}
+      whileTap={disabled ? undefined : { scale: 0.97 }}
+      className={`rps-card ${selected ? "rps-card--active" : ""}`}
+      disabled={disabled}
+      onClick={() => onSelect(choice)}
+    >
+      <div className="rps-card-icon">
+        <Icon />
+      </div>
+      <div className="text-center">
+        <p className="font-display text-2xl text-white">{label}</p>
+        <p className="mt-1 text-sm text-white/64">Escolha rapida</p>
+      </div>
+    </motion.button>
+  );
+}
+
+function RpsResultPanel({
+  currentPlayer,
+  opponentPlayer,
+  gameState,
+}: {
+  currentPlayer: NetworkPlayer | null;
+  opponentPlayer: NetworkPlayer | null;
+  gameState: GameState;
+}) {
+  const isDraw = gameState.result?.outcome === "draw";
+  const isWin = currentPlayer && gameState.result?.winnerSlot === currentPlayer.slot;
+  const variant = isDraw ? "active" : isWin ? "success" : "danger";
+  const title = isDraw ? "Empate" : isWin ? "Voce venceu" : "Voce perdeu";
+
+  return (
+    <SurfaceCard variant={variant} size="lg">
+      <div className="relative z-10 flex flex-col gap-5 text-left">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill label={title} variant={variant} />
+          <StatusPill label={formatModeLabel(gameState.mode)} variant="active" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <motion.div
+            initial={{ opacity: 0, x: -16, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            className="rounded-[24px] border border-white/10 bg-white/5 p-5"
+          >
+            <p className="eyebrow">Sua escolha</p>
+            <div className="mt-4 flex items-center gap-4 text-white">
+              <div className="rps-card-icon">{currentPlayer?.selection?.choice === "rock" ? <RockIcon /> : currentPlayer?.selection?.choice === "paper" ? <PaperIcon /> : <ScissorsIcon />}</div>
+              <div>
+                <p className="font-display text-3xl">{formatRpsChoice(currentPlayer?.selection?.choice)}</p>
+                <p className="mt-1 text-sm text-white/68">{currentPlayer?.name || "Voce"}</p>
+              </div>
+            </div>
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, x: 16, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            className="rounded-[24px] border border-white/10 bg-white/5 p-5"
+          >
+            <p className="eyebrow">Escolha rival</p>
+            <div className="mt-4 flex items-center gap-4 text-white">
+              <div className="rps-card-icon">{opponentPlayer?.selection?.choice === "rock" ? <RockIcon /> : opponentPlayer?.selection?.choice === "paper" ? <PaperIcon /> : <ScissorsIcon />}</div>
+              <div>
+                <p className="font-display text-3xl">{formatRpsChoice(opponentPlayer?.selection?.choice)}</p>
+                <p className="mt-1 text-sm text-white/68">{opponentPlayer?.name || "Rival"}</p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+        <p className="text-sm leading-6 text-white/74">{getResultCopy(gameState.result?.reason || "submitted")}</p>
+      </div>
+    </SurfaceCard>
+  );
+}
+
+function ModeSidebar({
+  currentMode,
+  confirmedSlots,
+  currentSlot,
+  interactive,
+  onSelect,
+}: {
+  currentMode: GameModeKey;
+  confirmedSlots: number[];
+  currentSlot: number | null | undefined;
+  interactive: boolean;
+  onSelect: (mode: GameModeKey) => void;
+}) {
+  const playerConfirmed = currentSlot !== null && currentSlot !== undefined && confirmedSlots.includes(currentSlot);
+  const modes: Array<{ key: GameModeKey; label: string }> = [
+    { key: "odd-even", label: "Impar ou Par" },
+    { key: "rps", label: "Pedra Papel Tesoura" },
+  ];
+
+  return (
+    <aside className="mode-sidebar">
+      <span className="mode-sidebar-label">Jogos</span>
+      <nav className="mode-nav" aria-label="Modos de jogo">
+        {modes.map((mode) => {
+          const isActive = currentMode === mode.key;
+          return (
+            <button
+              key={mode.key}
+              type="button"
+              disabled={!interactive}
+              className={`mode-link ${isActive ? "mode-link--active" : "mode-link--soon"} ${isActive && playerConfirmed ? "mode-link--confirmed" : ""}`}
+              aria-label={mode.label}
+              title={mode.label}
+              onClick={() => onSelect(mode.key)}
+            >
+              <span className={`mode-link-icon ${isActive ? "text-accent shadow-[0_0_18px_rgba(0,255,163,0.18)]" : "text-secondary"}`}>
+                {mode.key === "odd-even" ? <OddEvenIcon /> : <RpsModeIcon />}
+              </span>
+              <span className="mode-link-text">{isActive ? "Ativo" : "Modo"}</span>
+              <span className="mode-tooltip">{mode.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+}
+
 export default function App() {
   const socketRef = useRef<Socket | null>(null);
   const pendingCreateRef = useRef(false);
@@ -313,6 +514,7 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [selectedNumber, setSelectedNumber] = useState(0);
   const [selectedParity, setSelectedParity] = useState<ParityChoice>(defaultParity);
+  const [selectedRps, setSelectedRps] = useState<RpsChoice>("rock");
   const [submittedSelection, setSubmittedSelection] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [systemMessage, setSystemMessage] = useState<string | null>(null);
@@ -327,36 +529,34 @@ export default function App() {
 
     socketRef.current = socket;
 
-    socket.on("connect", () => {
-      setIsConnected(true);
-    });
-
-    socket.on("disconnect", () => {
-      setIsConnected(false);
-    });
-
+    socket.on("connect", () => setIsConnected(true));
+    socket.on("disconnect", () => setIsConnected(false));
     socket.on("player:meta", (payload: PlayerMeta) => {
       setMeta(payload);
       setAppView("in-room");
     });
-
     socket.on("game:state", (payload: GameState) => {
       setGameState(payload);
       setAppView("in-room");
     });
-
     socket.on("room:created", (payload: { roomCode: string }) => {
       navigateToRoom(payload.roomCode);
       attemptedJoinRef.current = payload.roomCode;
       setSystemMessage("Sala criada. Compartilhe o link para chamar outro jogador.");
       setAppView("in-room");
     });
-
     socket.on("room:joined", () => {
       setSystemMessage(null);
       setAppView("in-room");
     });
-
+    socket.on("room:left", () => {
+      setMeta(null);
+      setGameState(null);
+      attemptedJoinRef.current = null;
+      navigateHome();
+      setAppView("home");
+      setSystemMessage("Voce saiu da sala.");
+    });
     socket.on("room:error", (payload: { message: string }) => {
       setSystemMessage(payload.message);
       setMeta(null);
@@ -365,7 +565,6 @@ export default function App() {
       navigateHome();
       setAppView("home");
     });
-
     socket.on("room:expired", (payload: { message: string }) => {
       setSystemMessage(payload.message);
       setMeta(null);
@@ -397,18 +596,13 @@ export default function App() {
 
   useEffect(() => {
     const intervalMs = gameState?.phase === "playing" ? 40 : 250;
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-    }, intervalMs);
-
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
     return () => window.clearInterval(timer);
   }, [gameState?.phase]);
 
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket || !isConnected) {
-      return;
-    }
+    if (!socket || !isConnected) return;
 
     if (pendingCreateRef.current) {
       pendingCreateRef.current = false;
@@ -450,15 +644,20 @@ export default function App() {
     if (gameState?.phase !== "playing") {
       setSubmittedSelection(false);
       setSelectedNumber(0);
+      setSelectedRps("rock");
     }
-  }, [gameState?.phase]);
+  }, [gameState?.phase, gameState?.mode]);
 
   const secondsLeft = deriveSecondsLeft(gameState, now);
   const roomVariant = getRoomVariant(gameState?.phase || "waiting", secondsLeft);
   const isSpectator = meta?.spectator ?? false;
+  const currentSlot = meta?.slot;
+  const modeConfirmed = Boolean(gameState && gameState.modeConfirmedSlots.includes(0) && gameState.modeConfirmedSlots.includes(1));
+  const currentConfirmed = currentSlot !== null && currentSlot !== undefined && Boolean(gameState?.modeConfirmedSlots.includes(currentSlot));
   const canReady =
     Boolean(currentPlayer) &&
     !isSpectator &&
+    modeConfirmed &&
     gameState?.phase !== "playing" &&
     !currentPlayer?.ready;
   const canSubmit =
@@ -468,18 +667,16 @@ export default function App() {
     !submittedSelection &&
     !currentPlayer?.submitted;
   const parityAssigned = currentPlayer?.assignedParity ?? null;
-  const roomLink = meta?.roomCode
-    ? buildRoomLink(meta.roomCode)
-    : roomCodeFromUrl
-      ? buildRoomLink(roomCodeFromUrl)
-      : "";
+  const roomLink = meta?.roomCode ? buildRoomLink(meta.roomCode) : roomCodeFromUrl ? buildRoomLink(roomCodeFromUrl) : "";
 
   const resultVisual: ResultVisualState | null = useMemo(() => {
-    if (!gameState?.result || !currentPlayer) return null;
+    if (!gameState?.result || !currentPlayer || gameState.mode !== "odd-even" || !gameState.result.parity || gameState.result.sum === null) {
+      return null;
+    }
 
     const outcome =
       gameState.result.winnerSlot === null
-        ? "lose"
+        ? "draw"
         : gameState.result.winnerSlot === currentPlayer.slot
           ? "win"
           : "lose";
@@ -489,14 +686,12 @@ export default function App() {
       parity: gameState.result.parity,
       outcome,
     };
-  }, [currentPlayer, gameState?.result]);
+  }, [currentPlayer, gameState]);
 
   function ensureConnected() {
     const socket = socketRef.current;
     if (!socket) return;
-    if (!socket.connected) {
-      socket.connect();
-    }
+    if (!socket.connected) socket.connect();
   }
 
   function handleCreateRoom() {
@@ -516,6 +711,20 @@ export default function App() {
     ensureConnected();
   }
 
+  function handleLeaveRoom() {
+    socketRef.current?.emit("room:leave");
+  }
+
+  function handleSelectMode(mode: GameModeKey) {
+    if (!socketRef.current || !gameState || isSpectator || gameState.phase === "playing") return;
+    socketRef.current.emit("room:set-mode", { mode });
+  }
+
+  function handleConfirmMode() {
+    if (!socketRef.current || !gameState || isSpectator || gameState.phase === "playing") return;
+    socketRef.current.emit("room:confirm-mode");
+  }
+
   function copyRoomLink() {
     if (!roomLink) return;
     navigator.clipboard.writeText(roomLink).then(() => {
@@ -531,16 +740,12 @@ export default function App() {
   }
 
   function saveName() {
-    if (!socketRef.current || !currentPlayer || isSpectator || gameState?.phase === "playing") {
-      return;
-    }
-
+    if (!socketRef.current || !currentPlayer || isSpectator || gameState?.phase === "playing") return;
     const trimmed = draftName.replace(/\s+/g, " ").trim().slice(0, 20);
     if (!trimmed || trimmed === currentPlayer.name) {
       setDraftName(currentPlayer.name);
       return;
     }
-
     socketRef.current.emit("player:set-name", { name: trimmed });
   }
 
@@ -550,12 +755,19 @@ export default function App() {
     socketRef.current.emit("player:pick-parity", { parity: nextParity });
   }
 
-  function sendChoice() {
+  function sendOddEvenChoice() {
     if (!socketRef.current || !canSubmit) return;
-
     socketRef.current.emit("player:submit", {
       number: selectedNumber,
       parity: selectedParity,
+    });
+    setSubmittedSelection(true);
+  }
+
+  function sendRpsChoice() {
+    if (!socketRef.current || !canSubmit) return;
+    socketRef.current.emit("player:submit-rps", {
+      choice: selectedRps,
     });
     setSubmittedSelection(true);
   }
@@ -569,12 +781,13 @@ export default function App() {
               <p className="eyebrow">Entrada</p>
               <h2 className="mt-3 panel-title">Crie uma sala e envie o link</h2>
               <p className="mt-3 panel-copy">
-                Agora o jogo nao coloca mais voce automaticamente numa partida. Primeiro voce cria a sala, depois compartilha o link para o outro jogador entrar.
+                Agora voce pode jogar Impar ou Par e Pedra, Papel e Tesoura na mesma plataforma, escolhendo o modo dentro da sala.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <StatusPill label="1 sala por link" variant="active" size="sm" />
               <StatusPill label="2 jogadores" variant="success" size="sm" />
+              <StatusPill label="2 modos" variant="active" size="sm" />
             </div>
             <PrimaryAction variant="active" size="lg" onClick={handleCreateRoom}>
               Criar sala
@@ -591,15 +804,15 @@ export default function App() {
             <div className="grid gap-3">
               <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
                 <p className="text-sm font-semibold text-white">1. Criar sala</p>
-                <p className="mt-2 text-sm leading-6 text-white/72">Voce gera um link unico para a partida.</p>
+                <p className="mt-2 text-sm leading-6 text-white/72">Voce gera um link unico para jogar online.</p>
               </div>
               <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
-                <p className="text-sm font-semibold text-white">2. Compartilhar</p>
-                <p className="mt-2 text-sm leading-6 text-white/72">Seu amigo entra pelo link `/sala/codigo`.</p>
+                <p className="text-sm font-semibold text-white">2. Escolher o modo</p>
+                <p className="mt-2 text-sm leading-6 text-white/72">Os dois jogadores confirmam o modo antes de marcar pronto.</p>
               </div>
               <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
-                <p className="text-sm font-semibold text-white">3. Marcar pronto</p>
-                <p className="mt-2 text-sm leading-6 text-white/72">Quando os dois estiverem na sala, a rodada pode comecar.</p>
+                <p className="text-sm font-semibold text-white">3. Jogar</p>
+                <p className="mt-2 text-sm leading-6 text-white/72">A sala mantém o fluxo online e o histórico das rodadas.</p>
               </div>
             </div>
           </div>
@@ -637,13 +850,13 @@ export default function App() {
                   <p className="eyebrow">Sala criada</p>
                   <h2 className="mt-3 panel-title">{formatPhaseTitle(gameState?.phase || "waiting")}</h2>
                   <p className="mt-3 panel-copy">
-                    {gameState?.infoMessage || "Compartilhe o link e aguarde o segundo jogador entrar."}
+                    {gameState?.infoMessage || "Compartilhe o link, confirme o modo e aguarde o segundo jogador entrar."}
                   </p>
                 </div>
-                <StatusPill
-                  label={gameState?.players.length === 2 ? "2 jogadores" : "1 jogador"}
-                  variant={gameState?.players.length === 2 ? "success" : "active"}
-                />
+                <div className="flex flex-wrap gap-2 justify-end">
+                  <StatusPill label={formatModeLabel(gameState?.mode || "odd-even")} variant="active" />
+                  <StatusPill label={gameState?.players.length === 2 ? "2 jogadores" : "1 jogador"} variant={gameState?.players.length === 2 ? "success" : "active"} />
+                </div>
               </div>
 
               <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 text-left">
@@ -655,8 +868,19 @@ export default function App() {
                   <PrimaryAction variant="active" size="md" onClick={copyRoomLink}>
                     Copiar link
                   </PrimaryAction>
+                  <PrimaryAction variant="danger" size="md" onClick={handleLeaveRoom}>
+                    Sair da sala
+                  </PrimaryAction>
                 </div>
               </div>
+
+              <ModeConfirmCard
+                mode={gameState?.mode || "odd-even"}
+                confirmedSlots={gameState?.modeConfirmedSlots || []}
+                currentSlot={currentSlot}
+                canConfirm={!isSpectator}
+                onConfirm={handleConfirmMode}
+              />
 
               <NameEditor
                 value={draftName}
@@ -666,18 +890,8 @@ export default function App() {
               />
 
               <div className="grid gap-3">
-                <ReadySummaryCard
-                  title="Voce"
-                  name={currentPlayer?.name || "Sua vaga"}
-                  status={currentPlayer?.ready ? "Pronto" : "Aguardando"}
-                  variant={currentPlayer?.ready ? "success" : "default"}
-                />
-                <ReadySummaryCard
-                  title="Rival"
-                  name={opponentPlayer?.name || "Aguardando entrada"}
-                  status={!opponentPlayer ? "Sem conexao" : opponentPlayer.ready ? "Pronto" : "Aguardando"}
-                  variant={!opponentPlayer ? "default" : opponentPlayer.ready ? "success" : "active"}
-                />
+                <ReadySummaryCard title="Voce" name={currentPlayer?.name || "Sua vaga"} status={currentPlayer?.ready ? "Pronto" : "Aguardando"} variant={currentPlayer?.ready ? "success" : "default"} />
+                <ReadySummaryCard title="Rival" name={opponentPlayer?.name || "Aguardando entrada"} status={!opponentPlayer ? "Sem conexao" : opponentPlayer.ready ? "Pronto" : "Aguardando"} variant={!opponentPlayer ? "default" : opponentPlayer.ready ? "success" : "active"} />
               </div>
 
               <ReadyButton
@@ -686,13 +900,131 @@ export default function App() {
                 size="lg"
                 onClick={sendReady}
               >
-                {currentPlayer?.ready ? "Pronto enviado" : "Marcar como pronto"}
+                {currentPlayer?.ready ? "Pronto enviado" : modeConfirmed ? "Marcar como pronto" : "Confirme o modo primeiro"}
               </ReadyButton>
             </div>
           </SurfaceCard>
         </div>
 
         <HistoryFeed history={gameState?.history || []} />
+      </div>
+    );
+  }
+
+  function renderOddEvenPlaying() {
+    return (
+      <div className="grid gap-4 lg:grid-cols-[0.85fr,1.15fr]">
+        <SurfaceCard size="lg" className="bg-black/10">
+          <div className="relative z-10 flex flex-col gap-5 text-left">
+            <div>
+              <p className="eyebrow">Paridade</p>
+              <p className="mt-2 text-sm leading-6 text-textMuted">Quem escolhe primeiro fica com o lado.</p>
+            </div>
+            <ParityToggle
+              value={selectedParity}
+              disabled={!canSubmit || Boolean(parityAssigned)}
+              variant="active"
+              onChange={handleParityChange}
+            />
+            <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
+              <p className="eyebrow">Seu lado</p>
+              <p className="mt-3 text-2xl font-semibold text-white">{formatParityLabel(parityAssigned || selectedParity)}</p>
+            </div>
+          </div>
+        </SurfaceCard>
+
+        <SurfaceCard size="lg" className="bg-black/10">
+          <div className="relative z-10 flex flex-col gap-5 text-left">
+            <div>
+              <p className="eyebrow">Numero</p>
+              <p className="mt-2 text-sm leading-6 text-textMuted">Escolha de 0 a 5 e confirme.</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+              {Array.from({ length: 6 }, (_, value) => (
+                <NumberOrb
+                  key={value}
+                  value={value}
+                  selected={selectedNumber === value}
+                  disabled={!canSubmit}
+                  onSelect={setSelectedNumber}
+                />
+              ))}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-[20px] border border-white/10 bg-white/5 p-4">
+                <p className="eyebrow">Seu numero</p>
+                <p className="mt-3 font-display text-4xl text-white">{selectedNumber}</p>
+              </div>
+              <div className="rounded-[20px] border border-white/10 bg-white/5 p-4">
+                <p className="eyebrow">Seu lado</p>
+                <p className="mt-3 text-2xl font-semibold text-white">{formatParityLabel(parityAssigned || selectedParity)}</p>
+              </div>
+              <div className="rounded-[20px] border border-white/10 bg-white/5 p-4">
+                <p className="eyebrow">Status</p>
+                <p className="mt-3 text-sm leading-6 text-white/74">
+                  {submittedSelection || currentPlayer?.submitted ? "Jogada enviada. Aguardando resultado." : "Sua jogada ainda nao foi enviada."}
+                </p>
+              </div>
+            </div>
+            <PrimaryAction variant="active" disabled={!canSubmit} size="lg" onClick={sendOddEvenChoice}>
+              {submittedSelection || currentPlayer?.submitted ? "Aguardando rival" : "Confirmar jogada"}
+            </PrimaryAction>
+          </div>
+        </SurfaceCard>
+      </div>
+    );
+  }
+
+  function renderRpsPlaying() {
+    return (
+      <div className="grid gap-4">
+        <SurfaceCard size="lg" className="bg-black/10">
+          <div className="relative z-10 flex flex-col gap-5 text-left">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="eyebrow">Escolha</p>
+                <h3 className="mt-2 font-display text-3xl text-white">Pedra, Papel e Tesoura</h3>
+                <p className="mt-3 text-sm leading-6 text-white/72">Escolha uma opcao, confirme a jogada e aguarde a revelacao.</p>
+              </div>
+              <StatusPill label={submittedSelection || currentPlayer?.submitted ? "Enviado" : "Pendente"} variant={submittedSelection || currentPlayer?.submitted ? "success" : "active"} size="sm" />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              {(["rock", "paper", "scissors"] as RpsChoice[]).map((choice) => (
+                <RpsChoiceCard
+                  key={choice}
+                  choice={choice}
+                  selected={selectedRps === choice}
+                  disabled={!canSubmit}
+                  onSelect={setSelectedRps}
+                />
+              ))}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-[20px] border border-white/10 bg-white/5 p-4">
+                <p className="eyebrow">Sua escolha</p>
+                <p className="mt-3 font-display text-3xl text-white">{formatRpsChoice(selectedRps)}</p>
+              </div>
+              <div className="rounded-[20px] border border-white/10 bg-white/5 p-4">
+                <p className="eyebrow">Rival</p>
+                <p className="mt-3 text-sm leading-6 text-white/74">
+                  {opponentPlayer?.submitted ? "O rival ja enviou." : "Aguardando a jogada do rival."}
+                </p>
+              </div>
+              <div className="rounded-[20px] border border-white/10 bg-white/5 p-4">
+                <p className="eyebrow">Status</p>
+                <p className="mt-3 text-sm leading-6 text-white/74">
+                  {submittedSelection || currentPlayer?.submitted ? "Jogada enviada. Aguardando resultado." : "Sua jogada ainda nao foi enviada."}
+                </p>
+              </div>
+            </div>
+
+            <PrimaryAction variant="active" disabled={!canSubmit} size="lg" onClick={sendRpsChoice}>
+              {submittedSelection || currentPlayer?.submitted ? "Aguardando rival" : "Confirmar jogada"}
+            </PrimaryAction>
+          </div>
+        </SurfaceCard>
       </div>
     );
   }
@@ -705,9 +1037,14 @@ export default function App() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="eyebrow">Rodada</p>
-                <h2 className="mt-3 panel-title">Escolha sua jogada</h2>
+                <h2 className="mt-3 panel-title">{formatModeLabel(gameState?.mode || "odd-even")}</h2>
               </div>
-              <StatusPill label={`Round ${gameState?.round || 1}`} variant="active" />
+              <div className="flex flex-wrap gap-2">
+                <StatusPill label={`Round ${gameState?.round || 1}`} variant="active" />
+                <PrimaryAction variant="danger" size="sm" onClick={handleLeaveRoom}>
+                  Sair da sala
+                </PrimaryAction>
+              </div>
             </div>
 
             <TimerBar
@@ -720,114 +1057,44 @@ export default function App() {
           </div>
         </SurfaceCard>
 
-        <div className="grid gap-4 lg:grid-cols-[0.85fr,1.15fr]">
-          <SurfaceCard size="lg" className="bg-black/10">
-            <div className="relative z-10 flex flex-col gap-5 text-left">
-              <div>
-                <p className="eyebrow">Paridade</p>
-                <p className="mt-2 text-sm leading-6 text-textMuted">Quem escolhe primeiro fica com o lado.</p>
-              </div>
-
-              <ParityToggle
-                value={selectedParity}
-                disabled={!canSubmit || Boolean(parityAssigned)}
-                variant="active"
-                onChange={handleParityChange}
-              />
-
-              <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
-                <p className="eyebrow">Seu lado</p>
-                <p className="mt-3 text-2xl font-semibold text-white">
-                  {formatParityLabel(parityAssigned || selectedParity)}
-                </p>
-              </div>
-            </div>
-          </SurfaceCard>
-
-          <SurfaceCard size="lg" className="bg-black/10">
-            <div className="relative z-10 flex flex-col gap-5 text-left">
-              <div>
-                <p className="eyebrow">Numero</p>
-                <p className="mt-2 text-sm leading-6 text-textMuted">Escolha de 0 a 5 e confirme.</p>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-                {Array.from({ length: 6 }, (_, value) => (
-                  <NumberOrb
-                    key={value}
-                    value={value}
-                    selected={selectedNumber === value}
-                    disabled={!canSubmit}
-                    onSelect={setSelectedNumber}
-                  />
-                ))}
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-[20px] border border-white/10 bg-white/5 p-4">
-                  <p className="eyebrow">Seu numero</p>
-                  <p className="mt-3 font-display text-4xl text-white">{selectedNumber}</p>
-                </div>
-                <div className="rounded-[20px] border border-white/10 bg-white/5 p-4">
-                  <p className="eyebrow">Seu lado</p>
-                  <p className="mt-3 text-2xl font-semibold text-white">
-                    {formatParityLabel(parityAssigned || selectedParity)}
-                  </p>
-                </div>
-                <div className="rounded-[20px] border border-white/10 bg-white/5 p-4">
-                  <p className="eyebrow">Status</p>
-                  <p className="mt-3 text-sm leading-6 text-white/74">
-                    {submittedSelection || currentPlayer?.submitted
-                      ? "Jogada enviada. Aguardando resultado."
-                      : "Sua jogada ainda nao foi enviada."}
-                  </p>
-                </div>
-              </div>
-
-              <PrimaryAction variant="active" disabled={!canSubmit} size="lg" onClick={sendChoice}>
-                {submittedSelection || currentPlayer?.submitted ? "Aguardando rival" : "Confirmar jogada"}
-              </PrimaryAction>
-            </div>
-          </SurfaceCard>
-        </div>
+        {gameState?.mode === "rps" ? renderRpsPlaying() : renderOddEvenPlaying()}
       </div>
     );
   }
 
   function renderResultScreen() {
-    if (!resultVisual || !gameState?.result) {
-      return null;
-    }
+    if (!gameState?.result) return null;
 
     return (
       <div className="grid gap-4">
-        <ResultBanner
-          result={resultVisual}
-          playerParity={currentPlayer?.selection?.parity || selectedParity}
-        />
+        {gameState.mode === "rps" ? (
+          <RpsResultPanel currentPlayer={currentPlayer} opponentPlayer={opponentPlayer} gameState={gameState} />
+        ) : resultVisual ? (
+          <ResultBanner result={resultVisual} playerParity={currentPlayer?.selection?.parity || selectedParity} />
+        ) : null}
 
-        <SurfaceCard size="lg" className="bg-black/10">
-          <div className="relative z-10 grid gap-3 text-left md:grid-cols-4">
-            <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
-              <p className="eyebrow">Seu numero</p>
-              <p className="mt-3 font-display text-4xl text-white">{currentPlayer?.selection?.number ?? "--"}</p>
+        {gameState.mode === "odd-even" ? (
+          <SurfaceCard size="lg" className="bg-black/10">
+            <div className="relative z-10 grid gap-3 text-left md:grid-cols-4">
+              <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
+                <p className="eyebrow">Seu numero</p>
+                <p className="mt-3 font-display text-4xl text-white">{currentPlayer?.selection?.number ?? "--"}</p>
+              </div>
+              <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
+                <p className="eyebrow">Numero rival</p>
+                <p className="mt-3 font-display text-4xl text-white">{opponentPlayer?.selection?.number ?? "--"}</p>
+              </div>
+              <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
+                <p className="eyebrow">Paridade final</p>
+                <p className="mt-3 text-2xl font-semibold text-white">{formatParityLabel(gameState.result.parity)}</p>
+              </div>
+              <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
+                <p className="eyebrow">Resumo</p>
+                <p className="mt-3 text-sm leading-6 text-white/74">{getResultCopy(gameState.result.reason)}</p>
+              </div>
             </div>
-            <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
-              <p className="eyebrow">Numero rival</p>
-              <p className="mt-3 font-display text-4xl text-white">{opponentPlayer?.selection?.number ?? "--"}</p>
-            </div>
-            <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
-              <p className="eyebrow">Paridade final</p>
-              <p className="mt-3 text-2xl font-semibold text-white">
-                {formatParityLabel(gameState.result.parity)}
-              </p>
-            </div>
-            <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
-              <p className="eyebrow">Resumo</p>
-              <p className="mt-3 text-sm leading-6 text-white/74">{getResultCopy(gameState.result.reason)}</p>
-            </div>
-          </div>
-        </SurfaceCard>
+          </SurfaceCard>
+        ) : null}
 
         <SurfaceCard variant="success" size="md" className="bg-black/10">
           <div className="relative z-10 flex flex-col gap-4 text-left sm:flex-row sm:items-center sm:justify-between">
@@ -838,14 +1105,14 @@ export default function App() {
               </p>
             </div>
 
-            <ReadyButton
-              isSynced={Boolean(currentPlayer?.ready)}
-              disabled={!canReady}
-              size="lg"
-              onClick={sendReady}
-            >
-              {currentPlayer?.ready ? "Revanche enviada" : "Pedir revanche"}
-            </ReadyButton>
+            <div className="flex flex-wrap gap-3">
+              <PrimaryAction variant="danger" size="md" onClick={handleLeaveRoom}>
+                Sair da sala
+              </PrimaryAction>
+              <ReadyButton isSynced={Boolean(currentPlayer?.ready)} disabled={!canReady} size="lg" onClick={sendReady}>
+                {currentPlayer?.ready ? "Revanche enviada" : "Pedir revanche"}
+              </ReadyButton>
+            </div>
           </div>
         </SurfaceCard>
       </div>
@@ -853,9 +1120,7 @@ export default function App() {
   }
 
   function renderInRoomContent() {
-    if (!gameState) {
-      return renderJoiningScreen();
-    }
+    if (!gameState) return renderJoiningScreen();
 
     if (isSpectator) {
       return (
@@ -866,6 +1131,11 @@ export default function App() {
             <p className="mt-3 panel-copy">
               Voce entrou pelo link corretamente, mas esta assistindo porque os dois lugares ja estao ocupados.
             </p>
+            <div className="mt-6 flex justify-center">
+              <PrimaryAction variant="danger" size="md" onClick={handleLeaveRoom}>
+                Sair da sala
+              </PrimaryAction>
+            </div>
           </div>
         </div>
       );
@@ -882,7 +1152,13 @@ export default function App() {
         <div className="arcade-grid" aria-hidden="true" />
 
         <div className="platform-shell">
-          <ModeSidebar />
+          <ModeSidebar
+            currentMode={gameState?.mode || "odd-even"}
+            confirmedSlots={gameState?.modeConfirmedSlots || []}
+            currentSlot={currentSlot}
+            interactive={Boolean(gameState) && !isSpectator && gameState?.phase !== "playing"}
+            onSelect={handleSelectMode}
+          />
 
           <motion.div
             initial={{ opacity: 0, y: 18 }}
@@ -895,7 +1171,7 @@ export default function App() {
                 <div className="relative z-10 flex flex-col gap-4 text-left">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="eyebrow">Impar ou Par</p>
+                      <p className="eyebrow">{gameState ? formatModeLabel(gameState.mode) : "Plataforma de jogos"}</p>
                       <h1 className="mt-3 font-display text-4xl leading-none text-white sm:text-5xl">
                         Salas online
                       </h1>
@@ -903,10 +1179,12 @@ export default function App() {
 
                     <div className="flex flex-wrap gap-2">
                       <StatusPill label={meta?.roomCode || roomCodeFromUrl || "SEM SALA"} variant="active" />
-                      <StatusPill
-                        label={isConnected ? "Conectado" : "Desconectado"}
-                        variant={isConnected ? "success" : "danger"}
-                      />
+                      <StatusPill label={isConnected ? "Conectado" : "Desconectado"} variant={isConnected ? "success" : "danger"} />
+                      {appView === "in-room" ? (
+                        <PrimaryAction variant="danger" size="sm" onClick={handleLeaveRoom}>
+                          Sair da sala
+                        </PrimaryAction>
+                      ) : null}
                     </div>
                   </div>
 
@@ -914,7 +1192,7 @@ export default function App() {
                     {systemMessage
                       || gameState?.infoMessage
                       || (appView === "home"
-                        ? "Crie uma sala para jogar e envie o link para o outro jogador."
+                        ? "Crie uma sala para jogar e escolha o modo no lobby."
                         : "Conectando ao servidor para carregar a sala.")}
                   </p>
                 </div>
@@ -948,6 +1226,13 @@ export default function App() {
                       variant={gameState?.players.length === 2 ? "success" : "default"}
                       size="sm"
                     />
+                    {gameState ? (
+                      <StatusPill
+                        label={modeConfirmed ? "Modo confirmado" : currentConfirmed ? "Aguardando rival confirmar" : "Modo pendente"}
+                        variant={modeConfirmed ? "success" : "active"}
+                        size="sm"
+                      />
+                    ) : null}
                   </div>
                 </div>
               </SurfaceCard>

@@ -14,6 +14,7 @@ const ROUND_TIME_MS = 15_000;
 const READY_DELAY_MS = 1_200;
 const HISTORY_LIMIT = 12;
 const ROOM_IDLE_MS = 60_000;
+const DEFAULT_MODE = "odd-even";
 
 const app = express();
 app.use(cors());
@@ -32,6 +33,8 @@ const rooms = new Map();
 function createInitialRoom(roomCode) {
   return {
     roomCode,
+    mode: DEFAULT_MODE,
+    modeConfirmedSlots: [],
     players: [],
     spectators: [],
     phase: "waiting",
@@ -60,6 +63,33 @@ function generateRoomCode() {
 function getRoom(roomCode) {
   if (!roomCode) return null;
   return rooms.get(roomCode) || null;
+}
+
+function clearTimers(room) {
+  if (room.startTimeout) {
+    clearTimeout(room.startTimeout);
+    room.startTimeout = null;
+  }
+
+  if (room.resolveTimeout) {
+    clearTimeout(room.resolveTimeout);
+    room.resolveTimeout = null;
+  }
+}
+
+function clearIdleTimeout(room) {
+  if (room.idleTimeout) {
+    clearTimeout(room.idleTimeout);
+    room.idleTimeout = null;
+  }
+}
+
+function removeRoom(roomCode) {
+  const room = rooms.get(roomCode);
+  if (!room) return;
+  clearTimers(room);
+  clearIdleTimeout(room);
+  rooms.delete(roomCode);
 }
 
 function getAssignedParity(room, player) {
@@ -94,6 +124,8 @@ function buildState(room) {
     phase: room.phase,
     round: room.round,
     roomCode: room.roomCode,
+    mode: room.mode,
+    modeConfirmedSlots: room.modeConfirmedSlots,
     serverTime: Date.now(),
     deadlineAt: room.deadlineAt,
     result: room.result,
@@ -108,31 +140,11 @@ function emitState(room) {
   io.to(room.roomCode).emit("game:state", buildState(room));
 }
 
-function clearTimers(room) {
-  if (room.startTimeout) {
-    clearTimeout(room.startTimeout);
-    room.startTimeout = null;
-  }
-
-  if (room.resolveTimeout) {
-    clearTimeout(room.resolveTimeout);
-    room.resolveTimeout = null;
-  }
-}
-
-function clearIdleTimeout(room) {
-  if (room.idleTimeout) {
-    clearTimeout(room.idleTimeout);
-    room.idleTimeout = null;
-  }
-}
-
-function removeRoom(roomCode) {
-  const room = rooms.get(roomCode);
-  if (!room) return;
-  clearTimers(room);
-  clearIdleTimeout(room);
-  rooms.delete(roomCode);
+function resetModeConfirmations(room) {
+  room.modeConfirmedSlots = [];
+  room.players.forEach((player) => {
+    player.ready = false;
+  });
 }
 
 function resetRoundSelections(room) {
@@ -149,39 +161,26 @@ function getActivePlayers(room) {
   return room.players.filter((player) => player.connected);
 }
 
+function isModeConfirmed(room) {
+  const activePlayers = getActivePlayers(room);
+  return activePlayers.length === 2
+    && activePlayers.every((player) => room.modeConfirmedSlots.includes(player.slot));
+}
+
 function allPlayersReady(room) {
   const activePlayers = getActivePlayers(room);
-  return activePlayers.length === 2 && activePlayers.every((player) => player.ready);
+  return activePlayers.length === 2
+    && isModeConfirmed(room)
+    && activePlayers.every((player) => player.ready);
 }
 
-function pushHistoryEntry(room, { players, winner, parity, sum, reason }) {
-  const entry = {
-    round: room.round,
-    createdAt: Date.now(),
-    sum,
-    parity,
-    winnerSlot: winner?.slot ?? null,
-    winnerName: winner?.name ?? null,
-    reason,
-    players: players.map((player) => ({
-      slot: player.slot,
-      name: player.name,
-      number: player.selection?.number ?? null,
-      parity: player.selection?.parity ?? null,
-      auto: player.selection?.auto ?? false,
-    })),
-  };
+function sanitizePlayerName(value, fallback) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
 
-  room.history = [entry, ...room.history].slice(0, HISTORY_LIMIT);
-}
-
-function createAutoSelection(room, player, fallbackIndex) {
-  const assignedParity = getAssignedParity(room, player) || (fallbackIndex === 0 ? "odd" : "even");
-  return {
-    number: Math.floor(Math.random() * 6),
-    parity: assignedParity,
-    auto: true,
-  };
+  const normalized = value.replace(/\s+/g, " ").trim().slice(0, 20);
+  return normalized || fallback;
 }
 
 function setWaitingState(room, message = "Aguardando o segundo jogador na sala.") {
@@ -203,23 +202,11 @@ function setReadyLobbyState(room, message = "Sala aberta para revanche.") {
   room.deadlineAt = null;
   room.result = null;
   room.infoMessage = message;
+  room.players.forEach((player) => {
+    player.ready = false;
+  });
   resetRoundSelections(room);
   emitState(room);
-}
-
-function startRound(room) {
-  clearTimers(room);
-  clearIdleTimeout(room);
-  room.phase = "playing";
-  room.result = null;
-  room.deadlineAt = Date.now() + ROUND_TIME_MS;
-  room.infoMessage = "Rodada ativa. O primeiro a escolher impar ou par fica com a escolha.";
-  resetRoundSelections(room);
-  emitState(room);
-
-  room.resolveTimeout = setTimeout(() => {
-    resolveRound(room, "timeout");
-  }, ROUND_TIME_MS);
 }
 
 function maybeStartRound(room) {
@@ -240,8 +227,26 @@ function maybeStartRound(room) {
   }, READY_DELAY_MS);
 }
 
+function startRound(room) {
+  clearTimers(room);
+  clearIdleTimeout(room);
+  room.phase = "playing";
+  room.result = null;
+  room.deadlineAt = Date.now() + ROUND_TIME_MS;
+  room.infoMessage =
+    room.mode === "rps"
+      ? "Rodada ativa. Escolha pedra, papel ou tesoura."
+      : "Rodada ativa. O primeiro a escolher impar ou par fica com a escolha.";
+  resetRoundSelections(room);
+  emitState(room);
+
+  room.resolveTimeout = setTimeout(() => {
+    resolveRound(room, "timeout");
+  }, ROUND_TIME_MS);
+}
+
 function applyParityChoice(room, player, desiredParity) {
-  if (room.phase !== "playing" || player.spectator) {
+  if (room.phase !== "playing" || room.mode !== "odd-even" || player.spectator) {
     return false;
   }
 
@@ -256,12 +261,66 @@ function applyParityChoice(room, player, desiredParity) {
   return false;
 }
 
-function resolveRound(room, reason = "submitted") {
-  if (room.phase !== "playing") {
-    return;
+function createOddEvenAutoSelection(room, player, fallbackIndex) {
+  const assignedParity = getAssignedParity(room, player) || (fallbackIndex === 0 ? "odd" : "even");
+  return {
+    number: Math.floor(Math.random() * 6),
+    parity: assignedParity,
+    choice: null,
+    auto: true,
+  };
+}
+
+function createRpsAutoSelection(choice = null) {
+  return {
+    number: null,
+    parity: null,
+    choice,
+    auto: true,
+  };
+}
+
+function resolveRpsWinner(firstChoice, secondChoice) {
+  if (!firstChoice && !secondChoice) return null;
+  if (!firstChoice) return 1;
+  if (!secondChoice) return 0;
+  if (firstChoice === secondChoice) return null;
+
+  if (
+    (firstChoice === "rock" && secondChoice === "scissors")
+    || (firstChoice === "scissors" && secondChoice === "paper")
+    || (firstChoice === "paper" && secondChoice === "rock")
+  ) {
+    return 0;
   }
 
-  clearTimers(room);
+  return 1;
+}
+
+function pushHistoryEntry(room, { players, winner, parity, sum, reason }) {
+  const entry = {
+    round: room.round,
+    mode: room.mode,
+    createdAt: Date.now(),
+    sum,
+    parity,
+    winnerSlot: winner?.slot ?? null,
+    winnerName: winner?.name ?? null,
+    reason,
+    players: players.map((player) => ({
+      slot: player.slot,
+      name: player.name,
+      number: player.selection?.number ?? null,
+      parity: player.selection?.parity ?? null,
+      choice: player.selection?.choice ?? null,
+      auto: player.selection?.auto ?? false,
+    })),
+  };
+
+  room.history = [entry, ...room.history].slice(0, HISTORY_LIMIT);
+}
+
+function resolveOddEvenRound(room, reason) {
   const players = room.players;
 
   if (room.parityOwnerSlot === null) {
@@ -272,7 +331,7 @@ function resolveRound(room, reason = "submitted") {
   players.forEach((player, index) => {
     const assignedParity = getAssignedParity(room, player) || (index === 0 ? "odd" : "even");
     if (!player.selection) {
-      player.selection = createAutoSelection(room, player, index);
+      player.selection = createOddEvenAutoSelection(room, player, index);
     }
 
     player.selection.parity = assignedParity;
@@ -285,39 +344,81 @@ function resolveRound(room, reason = "submitted") {
 
   pushHistoryEntry(room, { players, winner, parity, sum, reason });
 
-  room.phase = "result";
-  room.deadlineAt = null;
   room.result = {
+    mode: room.mode,
     sum,
     parity,
     winnerSlot: winner?.slot ?? null,
     reason,
+    outcome: winner ? "win" : "draw",
   };
   room.infoMessage = winner
     ? `Resultado fechado. ${winner.name} venceu a rodada.`
     : "Resultado fechado.";
+}
 
-  players.forEach((player) => {
+function resolveRpsRound(room, reason) {
+  const players = room.players;
+  const first = players[0];
+  const second = players[1];
+
+  if (!first.selection) {
+    first.selection = createRpsAutoSelection(null);
+  }
+
+  if (!second.selection) {
+    second.selection = createRpsAutoSelection(null);
+  }
+
+  first.submitted = true;
+  second.submitted = true;
+
+  const winnerIndex = resolveRpsWinner(first.selection.choice, second.selection.choice);
+  const winner = winnerIndex === null ? null : players[winnerIndex];
+  const outcome = winner ? "win" : "draw";
+
+  pushHistoryEntry(room, {
+    players,
+    winner,
+    parity: null,
+    sum: null,
+    reason,
+  });
+
+  room.result = {
+    mode: room.mode,
+    sum: null,
+    parity: null,
+    winnerSlot: winner?.slot ?? null,
+    reason,
+    outcome,
+  };
+  room.infoMessage = winner
+    ? `Resultado fechado. ${winner.name} venceu a rodada.`
+    : "Empate. Ninguem venceu a rodada.";
+}
+
+function resolveRound(room, reason = "submitted") {
+  if (room.phase !== "playing") {
+    return;
+  }
+
+  clearTimers(room);
+  room.phase = "result";
+  room.deadlineAt = null;
+
+  if (room.mode === "rps") {
+    resolveRpsRound(room, reason);
+  } else {
+    resolveOddEvenRound(room, reason);
+  }
+
+  room.players.forEach((player) => {
     player.ready = false;
   });
 
   room.round += 1;
   emitState(room);
-}
-
-function sanitizePlayerName(value, fallback) {
-  if (typeof value !== "string") {
-    return fallback;
-  }
-
-  const normalized = value.replace(/\s+/g, " ").trim().slice(0, 20);
-  return normalized || fallback;
-}
-
-function getSocketPlayer(room, socketId) {
-  return room.players.find((player) => player.socketId === socketId)
-    || room.spectators.find((spectator) => spectator.socketId === socketId)
-    || null;
 }
 
 function scheduleIdleTimeout(room) {
@@ -367,6 +468,7 @@ function leaveRoom(socket) {
   const wasPlayer = room.players.some((player) => player.socketId === socket.id);
   room.players = room.players.filter((player) => player.socketId !== socket.id);
   room.spectators = room.spectators.filter((spectator) => spectator.socketId !== socket.id);
+  room.modeConfirmedSlots = room.modeConfirmedSlots.filter((slot) => room.players.some((player) => player.slot === slot));
 
   if (room.players.length === 0 && room.spectators.length === 0) {
     removeRoom(room.roomCode);
@@ -379,6 +481,7 @@ function leaveRoom(socket) {
     } else {
       setWaitingState(room, "Um jogador saiu da sala.");
     }
+    resetModeConfirmations(room);
   } else {
     emitState(room);
   }
@@ -399,7 +502,9 @@ function joinRoom(socket, roomCode) {
     return;
   }
 
-  const slot = room.players.some((player) => player.slot === 0) ? (room.players.some((player) => player.slot === 1) ? null : 1) : 0;
+  const slot = room.players.some((player) => player.slot === 0)
+    ? (room.players.some((player) => player.slot === 1) ? null : 1)
+    : 0;
   const spectator = slot === null;
   const entry = {
     id: `player-${socket.id}`,
@@ -420,7 +525,7 @@ function joinRoom(socket, roomCode) {
     room.players.push(entry);
     room.infoMessage = room.players.length === 1
       ? `${entry.name} entrou na sala.`
-      : `${entry.name} entrou na sala. Agora voces ja podem marcar pronto.`;
+      : `${entry.name} entrou na sala. Agora confirmem o modo e marquem pronto.`;
   }
 
   clearIdleTimeout(room);
@@ -452,6 +557,7 @@ app.get("/api/health", (_req, res) => {
     ok: true,
     rooms: Array.from(rooms.values()).map((room) => ({
       roomCode: room.roomCode,
+      mode: room.mode,
       phase: room.phase,
       players: room.players.length,
       spectators: room.spectators.length,
@@ -504,12 +610,63 @@ io.on("connection", (socket) => {
     joinRoom(socket, roomCode);
   });
 
+  socket.on("room:leave", () => {
+    const roomCode = socket.data.roomCode;
+    leaveRoom(socket);
+    socket.emit("room:left", {
+      roomCode,
+    });
+  });
+
+  socket.on("room:set-mode", (payload) => {
+    const room = getRoom(socket.data.roomCode);
+    if (!room) return;
+
+    const currentPlayer = room.players.find((player) => player.socketId === socket.id);
+    if (!currentPlayer || room.phase === "playing") {
+      return;
+    }
+
+    const nextMode = payload?.mode === "rps" ? "rps" : "odd-even";
+    if (room.mode !== nextMode) {
+      room.mode = nextMode;
+      resetModeConfirmations(room);
+      room.infoMessage = `${currentPlayer.name} trocou o modo para ${nextMode === "rps" ? "Pedra, Papel e Tesoura" : "Impar ou Par"}.`;
+      emitState(room);
+    }
+  });
+
+  socket.on("room:confirm-mode", () => {
+    const room = getRoom(socket.data.roomCode);
+    if (!room) return;
+
+    const currentPlayer = room.players.find((player) => player.socketId === socket.id);
+    if (!currentPlayer || room.phase === "playing") {
+      return;
+    }
+
+    if (!room.modeConfirmedSlots.includes(currentPlayer.slot)) {
+      room.modeConfirmedSlots.push(currentPlayer.slot);
+    }
+
+    room.infoMessage = isModeConfirmed(room)
+      ? "Modo confirmado pelos dois jogadores. Agora voces podem marcar pronto."
+      : `${currentPlayer.name} confirmou o modo.`;
+    emitState(room);
+  });
+
   socket.on("player:ready", (payload) => {
     const room = getRoom(socket.data.roomCode);
     if (!room) return;
 
     const currentPlayer = room.players.find((player) => player.socketId === socket.id);
     if (!currentPlayer || room.phase === "playing") {
+      return;
+    }
+
+    if (!isModeConfirmed(room)) {
+      room.infoMessage = "Os dois jogadores precisam confirmar o modo antes de marcar pronto.";
+      emitState(room);
       return;
     }
 
@@ -552,7 +709,7 @@ io.on("connection", (socket) => {
     if (!room) return;
 
     const currentPlayer = room.players.find((player) => player.socketId === socket.id);
-    if (!currentPlayer || currentPlayer.submitted) {
+    if (!currentPlayer || currentPlayer.submitted || room.mode !== "odd-even") {
       return;
     }
 
@@ -566,7 +723,7 @@ io.on("connection", (socket) => {
     if (!room) return;
 
     const currentPlayer = room.players.find((player) => player.socketId === socket.id);
-    if (!currentPlayer || room.phase !== "playing" || currentPlayer.submitted) {
+    if (!currentPlayer || room.phase !== "playing" || currentPlayer.submitted || room.mode !== "odd-even") {
       return;
     }
 
@@ -587,6 +744,36 @@ io.on("connection", (socket) => {
     currentPlayer.selection = {
       number,
       parity: assignedParity,
+      choice: null,
+      auto: false,
+    };
+    currentPlayer.submitted = true;
+    room.infoMessage = `${currentPlayer.name} enviou a jogada.`;
+    emitState(room);
+
+    if (room.players.every((candidate) => candidate.submitted)) {
+      resolveRound(room, "submitted");
+    }
+  });
+
+  socket.on("player:submit-rps", (payload) => {
+    const room = getRoom(socket.data.roomCode);
+    if (!room) return;
+
+    const currentPlayer = room.players.find((player) => player.socketId === socket.id);
+    if (!currentPlayer || room.phase !== "playing" || currentPlayer.submitted || room.mode !== "rps") {
+      return;
+    }
+
+    const choice = ["rock", "paper", "scissors"].includes(payload?.choice) ? payload.choice : null;
+    if (!choice) {
+      return;
+    }
+
+    currentPlayer.selection = {
+      number: null,
+      parity: null,
+      choice,
       auto: false,
     };
     currentPlayer.submitted = true;

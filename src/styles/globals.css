@@ -150,6 +150,12 @@
     @apply border-secondary/25 bg-secondary/10;
   }
 
+  .mode-link--confirmed {
+    box-shadow:
+      0 0 24px rgba(0, 255, 163, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
   .mode-link-icon {
     @apply relative flex h-10 w-10 items-center justify-center rounded-[16px] border border-white/10 bg-black/25;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -422,6 +428,50 @@
     border-radius: 9999px;
     filter: blur(0.4px);
   }
+
+  .rps-card {
+    @apply relative flex flex-col items-center justify-center gap-4 overflow-hidden rounded-[28px] border border-white/10 bg-white/5 p-6 text-white transition duration-200;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 18px 50px rgba(4, 8, 20, 0.32);
+  }
+
+  .rps-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at top, rgba(0, 209, 255, 0.12), transparent 40%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 34%);
+    pointer-events: none;
+    opacity: 0.8;
+  }
+
+  .rps-card:hover:not(:disabled) {
+    @apply border-secondary/40 bg-secondary/10;
+    box-shadow:
+      0 0 24px rgba(0, 209, 255, 0.18),
+      0 22px 55px rgba(4, 8, 20, 0.42);
+  }
+
+  .rps-card--active {
+    @apply border-accent/40 bg-accent/10;
+    box-shadow:
+      0 0 24px rgba(0, 255, 163, 0.2),
+      0 22px 55px rgba(4, 8, 20, 0.42);
+    animation: rpsCardPulse 0.9s ease;
+  }
+
+  .rps-card:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+
+  .rps-card-icon {
+    @apply relative flex h-16 w-16 items-center justify-center rounded-[20px] border border-white/10 bg-black/25 text-white;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 0 18px rgba(0, 209, 255, 0.12);
+  }
 }
 
 @keyframes signalPulse {
@@ -484,6 +534,20 @@
 
   50% {
     transform: scale(1.06);
+  }
+}
+
+@keyframes rpsCardPulse {
+  0% {
+    transform: scale(0.97);
+  }
+
+  55% {
+    transform: scale(1.03);
+  }
+
+  100% {
+    transform: scale(1);
   }
 }
 
