@@ -10,6 +10,7 @@ import { SurfaceCard } from "./components/ui/SurfaceCard";
 import { TimerBar } from "./components/ui/TimerBar";
 import type { ParityChoice, ResultVisualState, UiVariant } from "./components/ui/types";
 
+type AppView = "home" | "joining" | "in-room" | "expired";
 type GamePhase = "waiting" | "ready" | "playing" | "result";
 type GameModeKey = "odd-even" | "rps";
 
@@ -70,12 +71,14 @@ interface GameState {
   history: HistoryItem[];
   infoMessage: string;
   players: NetworkPlayer[];
+  spectatorCount?: number;
 }
 
 interface PlayerMeta {
   socketId: string;
   slot: number | null;
   spectator: boolean;
+  roomCode: string;
 }
 
 const socketUrl = import.meta.env.VITE_SOCKET_URL || undefined;
@@ -85,11 +88,25 @@ const gameModes: GameModeItem[] = [
   { key: "rps", label: "Pedra Papel Tesoura", status: "coming-soon" },
 ];
 
-function deriveSecondsLeft(gameState: GameState | null, now: number) {
-  if (!gameState?.deadlineAt) {
-    return 0;
-  }
+function getRoomCodeFromPath() {
+  const match = window.location.pathname.match(/^\/sala\/([A-Za-z0-9_-]+)$/);
+  return match?.[1]?.toUpperCase() || null;
+}
 
+function buildRoomLink(roomCode: string) {
+  return `${window.location.origin}/sala/${roomCode}`;
+}
+
+function navigateToRoom(roomCode: string) {
+  window.history.pushState({}, "", `/sala/${roomCode}`);
+}
+
+function navigateHome() {
+  window.history.pushState({}, "", "/");
+}
+
+function deriveSecondsLeft(gameState: GameState | null, now: number) {
+  if (!gameState?.deadlineAt) return 0;
   return Math.max(Math.ceil((gameState.deadlineAt - now) / 1000), 0);
 }
 
@@ -106,7 +123,7 @@ function formatParityLabel(parity: ParityChoice | null | undefined) {
 
 function formatPhaseTitle(phase: GamePhase) {
   if (phase === "waiting") return "Aguardando segundo jogador";
-  if (phase === "ready") return "Lobby pronto";
+  if (phase === "ready") return "Sala pronta";
   if (phase === "playing") return "Rodada em andamento";
   return "Resultado da rodada";
 }
@@ -131,18 +148,8 @@ function RpsIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
       <circle cx="6.7" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="M11 6.2h4.5l1.6 1.6v3.5H11z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M7.6 16.8l2.2-2.2 1.9 1.9-2.2 2.2c-.5.5-1.4.5-1.9 0s-.5-1.4 0-1.9Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
+      <path d="M11 6.2h4.5l1.6 1.6v3.5H11z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M7.6 16.8l2.2-2.2 1.9 1.9-2.2 2.2c-.5.5-1.4.5-1.9 0s-.5-1.4 0-1.9Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M12.2 14.1l4.1 4.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M14.6 11.3h3.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.7" />
     </svg>
@@ -165,11 +172,7 @@ function ModeSidebar() {
               aria-label={mode.label}
               title={mode.label}
             >
-              <span
-                className={`mode-link-icon ${
-                  isActive ? "text-accent shadow-[0_0_18px_rgba(0,255,163,0.18)]" : "text-secondary"
-                }`}
-              >
+              <span className={`mode-link-icon ${isActive ? "text-accent shadow-[0_0_18px_rgba(0,255,163,0.18)]" : "text-secondary"}`}>
                 {mode.key === "odd-even" ? <OddEvenIcon /> : <RpsIcon />}
               </span>
               <span className="mode-link-text">{isActive ? "Ao vivo" : "Em breve"}</span>
@@ -193,12 +196,9 @@ function HistoryFeed({ history }: { history: HistoryItem[] }) {
           </div>
           <StatusPill label={`${history.length} registros`} variant="active" size="sm" />
         </div>
-
         {history.length === 0 ? (
           <div className="rounded-[22px] border border-dashed border-white/12 bg-white/5 p-5">
-            <p className="text-sm leading-6 text-white/72">
-              O historico aparece aqui assim que a primeira rodada terminar.
-            </p>
+            <p className="text-sm leading-6 text-white/72">O historico aparece aqui assim que a primeira rodada terminar.</p>
           </div>
         ) : (
           <div className="max-h-[26rem] space-y-3 overflow-y-auto pr-1">
@@ -212,17 +212,10 @@ function HistoryFeed({ history }: { history: HistoryItem[] }) {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="eyebrow">Round {item.round}</p>
-                    <p className="mt-2 text-base font-semibold text-white">
-                      {item.winnerName ? `${item.winnerName} venceu` : "Rodada finalizada"}
-                    </p>
+                    <p className="mt-2 text-base font-semibold text-white">{item.winnerName ? `${item.winnerName} venceu` : "Rodada finalizada"}</p>
                   </div>
-                  <StatusPill
-                    label={`Soma ${item.sum} - ${formatParityLabel(item.parity)}`}
-                    variant="success"
-                    size="sm"
-                  />
+                  <StatusPill label={`Soma ${item.sum} - ${formatParityLabel(item.parity)}`} variant="success" size="sm" />
                 </div>
-
                 <div className="mt-4 space-y-2">
                   {item.players.map((player) => (
                     <div
@@ -230,10 +223,7 @@ function HistoryFeed({ history }: { history: HistoryItem[] }) {
                       className="flex items-center justify-between gap-3 rounded-[18px] border border-white/10 bg-black/20 px-3 py-2"
                     >
                       <p className="text-sm font-medium text-white">{player.name}</p>
-                      <p className="text-sm text-white/68">
-                        {formatParityLabel(player.parity)} - {player.number ?? "--"}
-                        {player.auto ? " - auto" : ""}
-                      </p>
+                      <p className="text-sm text-white/68">{formatParityLabel(player.parity)} - {player.number ?? "--"}{player.auto ? " - auto" : ""}</p>
                     </div>
                   ))}
                 </div>
@@ -262,9 +252,8 @@ function NameEditor({
       <div className="flex flex-col gap-3 text-left">
         <div>
           <p className="eyebrow">Seu nome</p>
-          <p className="mt-2 text-sm leading-6 text-white/72">Ajuste o nome antes de marcar ready.</p>
+          <p className="mt-2 text-sm leading-6 text-white/72">Ajuste o nome antes de marcar pronto.</p>
         </div>
-
         <div className="flex flex-col gap-3 sm:flex-row">
           <input
             value={value}
@@ -281,7 +270,6 @@ function NameEditor({
             className="w-full rounded-[18px] border border-white/10 bg-black/25 px-4 py-3 text-base text-white outline-none transition focus:border-secondary/50 focus:bg-black/35"
             placeholder="Digite seu nome"
           />
-
           <PrimaryAction variant="active" size="md" disabled={disabled} onClick={onSave}>
             Salvar
           </PrimaryAction>
@@ -317,6 +305,9 @@ function ReadySummaryCard({
 
 export default function App() {
   const socketRef = useRef<Socket | null>(null);
+  const pendingCreateRef = useRef(false);
+  const attemptedJoinRef = useRef<string | null>(null);
+  const [appView, setAppView] = useState<AppView>(getRoomCodeFromPath() ? "joining" : "home");
   const [meta, setMeta] = useState<PlayerMeta | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -324,24 +315,84 @@ export default function App() {
   const [selectedParity, setSelectedParity] = useState<ParityChoice>(defaultParity);
   const [submittedSelection, setSubmittedSelection] = useState(false);
   const [draftName, setDraftName] = useState("");
+  const [systemMessage, setSystemMessage] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const roomCodeFromUrl = useMemo(() => getRoomCodeFromPath(), [appView]);
 
   useEffect(() => {
     const socket = io(socketUrl, {
       transports: ["websocket", "polling"],
+      autoConnect: true,
     });
 
     socketRef.current = socket;
 
-    socket.on("connect", () => setIsConnected(true));
-    socket.on("disconnect", () => setIsConnected(false));
-    socket.on("player:meta", (payload: PlayerMeta) => setMeta(payload));
-    socket.on("game:state", (payload: GameState) => setGameState(payload));
+    socket.on("connect", () => {
+      setIsConnected(true);
+    });
+
+    socket.on("disconnect", () => {
+      setIsConnected(false);
+    });
+
+    socket.on("player:meta", (payload: PlayerMeta) => {
+      setMeta(payload);
+      setAppView("in-room");
+    });
+
+    socket.on("game:state", (payload: GameState) => {
+      setGameState(payload);
+      setAppView("in-room");
+    });
+
+    socket.on("room:created", (payload: { roomCode: string }) => {
+      navigateToRoom(payload.roomCode);
+      attemptedJoinRef.current = payload.roomCode;
+      setSystemMessage("Sala criada. Compartilhe o link para chamar outro jogador.");
+      setAppView("in-room");
+    });
+
+    socket.on("room:joined", () => {
+      setSystemMessage(null);
+      setAppView("in-room");
+    });
+
+    socket.on("room:error", (payload: { message: string }) => {
+      setSystemMessage(payload.message);
+      setMeta(null);
+      setGameState(null);
+      attemptedJoinRef.current = null;
+      navigateHome();
+      setAppView("home");
+    });
+
+    socket.on("room:expired", (payload: { message: string }) => {
+      setSystemMessage(payload.message);
+      setMeta(null);
+      setGameState(null);
+      attemptedJoinRef.current = null;
+      navigateHome();
+      setAppView("expired");
+    });
 
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      attemptedJoinRef.current = null;
+      const nextRoomCode = getRoomCodeFromPath();
+      setMeta(null);
+      setGameState(null);
+      setSystemMessage(null);
+      setAppView(nextRoomCode ? "joining" : "home");
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
@@ -352,6 +403,24 @@ export default function App() {
 
     return () => window.clearInterval(timer);
   }, [gameState?.phase]);
+
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket || !isConnected) {
+      return;
+    }
+
+    if (pendingCreateRef.current) {
+      pendingCreateRef.current = false;
+      socket.emit("room:create");
+      return;
+    }
+
+    if (roomCodeFromUrl && attemptedJoinRef.current !== roomCodeFromUrl && !meta?.roomCode) {
+      attemptedJoinRef.current = roomCodeFromUrl;
+      socket.emit("room:join", { roomCode: roomCodeFromUrl });
+    }
+  }, [isConnected, meta?.roomCode, roomCodeFromUrl]);
 
   const currentPlayer = useMemo(() => {
     if (!gameState || !meta) return null;
@@ -370,7 +439,6 @@ export default function App() {
 
   useEffect(() => {
     if (!currentPlayer) return;
-
     if (currentPlayer.assignedParity) {
       setSelectedParity(currentPlayer.assignedParity);
     } else if (gameState?.phase !== "playing") {
@@ -400,6 +468,11 @@ export default function App() {
     !submittedSelection &&
     !currentPlayer?.submitted;
   const parityAssigned = currentPlayer?.assignedParity ?? null;
+  const roomLink = meta?.roomCode
+    ? buildRoomLink(meta.roomCode)
+    : roomCodeFromUrl
+      ? buildRoomLink(roomCodeFromUrl)
+      : "";
 
   const resultVisual: ResultVisualState | null = useMemo(() => {
     if (!gameState?.result || !currentPlayer) return null;
@@ -417,6 +490,31 @@ export default function App() {
       outcome,
     };
   }, [currentPlayer, gameState?.result]);
+
+  function ensureConnected() {
+    const socket = socketRef.current;
+    if (!socket) return;
+    if (!socket.connected) {
+      socket.connect();
+    }
+  }
+
+  function handleCreateRoom() {
+    setSystemMessage(null);
+    setAppView("joining");
+    pendingCreateRef.current = true;
+    attemptedJoinRef.current = null;
+    ensureConnected();
+  }
+
+  function copyRoomLink() {
+    if (!roomLink) return;
+    navigator.clipboard.writeText(roomLink).then(() => {
+      setSystemMessage("Link da sala copiado.");
+    }).catch(() => {
+      setSystemMessage("Nao foi possivel copiar o link agora.");
+    });
+  }
 
   function sendReady() {
     if (!socketRef.current || !canReady) return;
@@ -453,6 +551,73 @@ export default function App() {
     setSubmittedSelection(true);
   }
 
+  function renderHomeScreen() {
+    return (
+      <div className="grid gap-4 lg:grid-cols-[1.05fr,0.95fr]">
+        <SurfaceCard variant="active" size="lg">
+          <div className="relative z-10 flex h-full flex-col justify-between gap-6 text-left">
+            <div>
+              <p className="eyebrow">Entrada</p>
+              <h2 className="mt-3 panel-title">Crie uma sala e envie o link</h2>
+              <p className="mt-3 panel-copy">
+                Agora o jogo nao coloca mais voce automaticamente numa partida. Primeiro voce cria a sala, depois compartilha o link para o outro jogador entrar.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <StatusPill label="1 sala por link" variant="active" size="sm" />
+              <StatusPill label="2 jogadores" variant="success" size="sm" />
+              <StatusPill label="Expira em 1 min" variant="danger" size="sm" />
+            </div>
+            <PrimaryAction variant="active" size="lg" onClick={handleCreateRoom}>
+              Criar sala
+            </PrimaryAction>
+          </div>
+        </SurfaceCard>
+
+        <SurfaceCard size="lg" className="bg-black/10">
+          <div className="relative z-10 flex h-full flex-col gap-5 text-left">
+            <div>
+              <p className="eyebrow">Como funciona</p>
+              <h3 className="mt-3 font-display text-3xl text-white">Fluxo rapido</h3>
+            </div>
+            <div className="grid gap-3">
+              <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
+                <p className="text-sm font-semibold text-white">1. Criar sala</p>
+                <p className="mt-2 text-sm leading-6 text-white/72">Voce gera um link unico para a partida.</p>
+              </div>
+              <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
+                <p className="text-sm font-semibold text-white">2. Compartilhar</p>
+                <p className="mt-2 text-sm leading-6 text-white/72">Seu amigo entra pelo link `/sala/codigo`.</p>
+              </div>
+              <div className="rounded-[22px] border border-white/10 bg-white/5 p-4">
+                <p className="text-sm font-semibold text-white">3. Marcar pronto</p>
+                <p className="mt-2 text-sm leading-6 text-white/72">Quando os dois estiverem na sala, a rodada pode comecar.</p>
+              </div>
+            </div>
+          </div>
+        </SurfaceCard>
+      </div>
+    );
+  }
+
+  function renderJoiningScreen() {
+    return (
+      <div className="grid min-h-[28rem] place-items-center text-center">
+        <div className="max-w-xl">
+          <StatusPill label="Entrando na sala" variant="active" />
+          <h2 className="mt-4 panel-title">
+            {roomCodeFromUrl ? `Conectando a sala ${roomCodeFromUrl}` : "Preparando sua sala"}
+          </h2>
+          <p className="mt-3 panel-copy">
+            {roomCodeFromUrl
+              ? "Estamos validando o link e tentando entrar na sala."
+              : "Criando uma nova sala para voce compartilhar."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   function renderReadyScreen() {
     return (
       <div className="grid gap-4 xl:grid-cols-[0.95fr,1.05fr]">
@@ -461,16 +626,28 @@ export default function App() {
             <div className="relative z-10 flex flex-col gap-5 text-left">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="eyebrow">Lobby</p>
+                  <p className="eyebrow">Sala criada</p>
                   <h2 className="mt-3 panel-title">{formatPhaseTitle(gameState?.phase || "waiting")}</h2>
                   <p className="mt-3 panel-copy">
-                    {gameState?.infoMessage || "Entre na sala, ajuste seu nome e marque ready."}
+                    {gameState?.infoMessage || "Compartilhe o link e aguarde o segundo jogador entrar."}
                   </p>
                 </div>
                 <StatusPill
                   label={gameState?.players.length === 2 ? "2 jogadores" : "1 jogador"}
                   variant={gameState?.players.length === 2 ? "success" : "active"}
                 />
+              </div>
+
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 text-left">
+                <p className="eyebrow">Link da sala</p>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                  <div className="min-w-0 flex-1 rounded-[18px] border border-white/10 bg-black/25 px-4 py-3 text-sm text-white/78">
+                    <span className="block truncate">{roomLink}</span>
+                  </div>
+                  <PrimaryAction variant="active" size="md" onClick={copyRoomLink}>
+                    Copiar link
+                  </PrimaryAction>
+                </div>
               </div>
 
               <NameEditor
@@ -484,13 +661,13 @@ export default function App() {
                 <ReadySummaryCard
                   title="Voce"
                   name={currentPlayer?.name || "Sua vaga"}
-                  status={currentPlayer?.ready ? "Ready" : "Aguardando"}
+                  status={currentPlayer?.ready ? "Pronto" : "Aguardando"}
                   variant={currentPlayer?.ready ? "success" : "default"}
                 />
                 <ReadySummaryCard
                   title="Rival"
-                  name={opponentPlayer?.name || "Aguardando rival"}
-                  status={!opponentPlayer ? "Sem conexao" : opponentPlayer.ready ? "Ready" : "Aguardando"}
+                  name={opponentPlayer?.name || "Aguardando entrada"}
+                  status={!opponentPlayer ? "Sem conexao" : opponentPlayer.ready ? "Pronto" : "Aguardando"}
                   variant={!opponentPlayer ? "default" : opponentPlayer.ready ? "success" : "active"}
                 />
               </div>
@@ -501,7 +678,7 @@ export default function App() {
                 size="lg"
                 onClick={sendReady}
               >
-                {currentPlayer?.ready ? "Ready enviado" : "Marcar Ready"}
+                {currentPlayer?.ready ? "Pronto enviado" : "Marcar como pronto"}
               </ReadyButton>
             </div>
           </SurfaceCard>
@@ -667,6 +844,30 @@ export default function App() {
     );
   }
 
+  function renderInRoomContent() {
+    if (!gameState) {
+      return renderJoiningScreen();
+    }
+
+    if (isSpectator) {
+      return (
+        <div className="grid min-h-[22rem] place-items-center text-center">
+          <div className="max-w-lg">
+            <StatusPill label="Espectador" variant="active" />
+            <h2 className="mt-4 panel-title">A sala ja esta com 2 jogadores</h2>
+            <p className="mt-3 panel-copy">
+              Voce entrou pelo link corretamente, mas esta assistindo porque os dois lugares ja estao ocupados.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    if (gameState.phase === "playing") return renderPlayingScreen();
+    if (gameState.phase === "result") return renderResultScreen();
+    return renderReadyScreen();
+  }
+
   return (
     <MotionConfig reducedMotion="user">
       <div className="app-shell">
@@ -688,21 +889,25 @@ export default function App() {
                     <div>
                       <p className="eyebrow">Impar ou Par</p>
                       <h1 className="mt-3 font-display text-4xl leading-none text-white sm:text-5xl">
-                        Sala unica online
+                        Salas online
                       </h1>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      <StatusPill label={gameState?.roomCode || "SALA-01"} variant="active" />
+                      <StatusPill label={meta?.roomCode || roomCodeFromUrl || "SEM SALA"} variant="active" />
                       <StatusPill
-                        label={isConnected ? "Conectado" : "Reconectando"}
+                        label={isConnected ? "Conectado" : "Desconectado"}
                         variant={isConnected ? "success" : "danger"}
                       />
                     </div>
                   </div>
 
                   <p className="panel-copy">
-                    {gameState?.infoMessage || "Conectando ao servidor para carregar a sala."}
+                    {systemMessage
+                      || gameState?.infoMessage
+                      || (appView === "home"
+                        ? "Crie uma sala para jogar e envie o link para o outro jogador."
+                        : "Conectando ao servidor para carregar a sala.")}
                   </p>
                 </div>
               </SurfaceCard>
@@ -712,18 +917,22 @@ export default function App() {
                   <div>
                     <p className="eyebrow">Seu status</p>
                     <h2 className="mt-3 font-display text-2xl text-white">
-                      {gameState ? formatPhaseTitle(gameState.phase) : "Conectando"}
+                      {appView === "home"
+                        ? "Fora da sala"
+                        : appView === "joining"
+                          ? "Entrando na sala"
+                          : appView === "expired"
+                            ? "Sala encerrada"
+                            : gameState
+                              ? formatPhaseTitle(gameState.phase)
+                              : "Conectando"}
                     </h2>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
                     <StatusPill
-                      label={
-                        meta?.slot !== null && meta?.slot !== undefined
-                          ? `Jogador ${Number(meta.slot) + 1}`
-                          : "Sem vaga"
-                      }
-                      variant={isSpectator ? "danger" : "success"}
+                      label={meta ? (meta.spectator ? "Espectador" : `Jogador ${Number(meta.slot) + 1}`) : "Sem vaga"}
+                      variant={meta?.spectator ? "active" : meta ? "success" : "default"}
                       size="sm"
                     />
                     <StatusPill
@@ -740,31 +949,11 @@ export default function App() {
               <SurfaceCard variant={roomVariant} size="lg" className="relative">
                 <div className="scanline" />
                 <div className="relative z-10 flex flex-col gap-6 text-left">
-                  {!gameState ? (
-                    <div className="grid min-h-[22rem] place-items-center text-center">
-                      <div className="max-w-md">
-                        <p className="eyebrow">Conectando</p>
-                        <h2 className="mt-3 panel-title">Entrando na sala</h2>
-                        <p className="mt-3 panel-copy">Estamos aguardando o primeiro estado do servidor.</p>
-                      </div>
-                    </div>
-                  ) : isSpectator ? (
-                    <div className="grid min-h-[22rem] place-items-center text-center">
-                      <div className="max-w-lg">
-                        <StatusPill label="Sala cheia" variant="danger" />
-                        <h2 className="mt-4 panel-title">Os dois lugares ja estao ocupados</h2>
-                        <p className="mt-3 panel-copy">
-                          Espere uma vaga abrir e recarregue a pagina para entrar.
-                        </p>
-                      </div>
-                    </div>
-                  ) : gameState.phase === "playing" ? (
-                    renderPlayingScreen()
-                  ) : gameState.phase === "result" ? (
-                    renderResultScreen()
-                  ) : (
-                    renderReadyScreen()
-                  )}
+                  {appView === "home" || appView === "expired"
+                    ? renderHomeScreen()
+                    : appView === "joining"
+                      ? renderJoiningScreen()
+                      : renderInRoomContent()}
                 </div>
               </SurfaceCard>
             </main>
