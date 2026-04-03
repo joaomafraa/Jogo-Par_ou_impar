@@ -504,6 +504,15 @@ export default function App() {
     setAppView("joining");
     pendingCreateRef.current = true;
     attemptedJoinRef.current = null;
+    const socket = socketRef.current;
+    if (!socket) return;
+
+    if (socket.connected) {
+      pendingCreateRef.current = false;
+      socket.emit("room:create");
+      return;
+    }
+
     ensureConnected();
   }
 
@@ -566,7 +575,6 @@ export default function App() {
             <div className="flex flex-wrap gap-2">
               <StatusPill label="1 sala por link" variant="active" size="sm" />
               <StatusPill label="2 jogadores" variant="success" size="sm" />
-              <StatusPill label="Expira em 1 min" variant="danger" size="sm" />
             </div>
             <PrimaryAction variant="active" size="lg" onClick={handleCreateRoom}>
               Criar sala

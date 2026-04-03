@@ -327,7 +327,7 @@ function scheduleIdleTimeout(room) {
     return;
   }
 
-  room.infoMessage = "Aguardando o segundo jogador. A sala expira em 1 minuto.";
+  room.infoMessage = "Aguardando o segundo jogador na sala.";
   emitState(room);
 
   room.idleTimeout = setTimeout(async () => {
