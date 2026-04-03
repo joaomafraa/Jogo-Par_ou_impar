@@ -10,7 +10,7 @@ const rootDir = join(__dirname, "..");
 const distDir = join(rootDir, "dist");
 
 const PORT = Number(process.env.PORT || 3001);
-const ROUND_TIME_MS = 25_000;
+const ROUND_TIME_MS = 15_000;
 const READY_DELAY_MS = 1_200;
 const HISTORY_LIMIT = 12;
 

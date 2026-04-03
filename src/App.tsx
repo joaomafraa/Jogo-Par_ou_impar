@@ -11,6 +11,13 @@ import { TimerBar } from "./components/ui/TimerBar";
 import type { ParityChoice, ResultVisualState, UiVariant } from "./components/ui/types";
 
 type GamePhase = "waiting" | "ready" | "playing" | "result";
+type GameModeKey = "odd-even" | "rps";
+
+interface GameModeItem {
+  key: GameModeKey;
+  label: string;
+  status: "active" | "coming-soon";
+}
 
 interface HistoryItem {
   round: number;
@@ -73,6 +80,10 @@ interface PlayerMeta {
 
 const socketUrl = import.meta.env.VITE_SOCKET_URL || undefined;
 const defaultParity: ParityChoice = "odd";
+const gameModes: GameModeItem[] = [
+  { key: "odd-even", label: "Impar ou Par", status: "active" },
+  { key: "rps", label: "Pedra Papel Tesoura", status: "coming-soon" },
+];
 
 function deriveSecondsLeft(gameState: GameState | null, now: number) {
   if (!gameState?.deadlineAt) {
@@ -83,14 +94,8 @@ function deriveSecondsLeft(gameState: GameState | null, now: number) {
 }
 
 function getRoomVariant(phase: GamePhase, secondsLeft: number): UiVariant {
-  if (phase === "result" || phase === "ready") {
-    return "success";
-  }
-
-  if (phase === "playing") {
-    return secondsLeft <= 5 ? "danger" : "active";
-  }
-
+  if (phase === "result" || phase === "ready") return "success";
+  if (phase === "playing") return secondsLeft <= 5 ? "danger" : "active";
   return "active";
 }
 
@@ -110,6 +115,71 @@ function getResultCopy(reason: NetworkResult["reason"]) {
   if (reason === "submitted") return "As duas jogadas chegaram antes do tempo.";
   if (reason === "timeout") return "O tempo acabou e a rodada foi fechada automaticamente.";
   return "A rodada foi interrompida por desconexao.";
+}
+
+function OddEvenIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+      <circle cx="8" cy="12" r="3.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="16.5" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.6" opacity="0.9" />
+      <circle cx="16.5" cy="16" r="2.5" stroke="currentColor" strokeWidth="1.6" opacity="0.55" />
+    </svg>
+  );
+}
+
+function RpsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+      <circle cx="6.7" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M11 6.2h4.5l1.6 1.6v3.5H11z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M7.6 16.8l2.2-2.2 1.9 1.9-2.2 2.2c-.5.5-1.4.5-1.9 0s-.5-1.4 0-1.9Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path d="M12.2 14.1l4.1 4.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M14.6 11.3h3.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.7" />
+    </svg>
+  );
+}
+
+function ModeSidebar() {
+  return (
+    <aside className="mode-sidebar">
+      <span className="mode-sidebar-label">Jogos</span>
+      <nav className="mode-nav" aria-label="Modos de jogo">
+        {gameModes.map((mode) => {
+          const isActive = mode.status === "active";
+          return (
+            <button
+              key={mode.key}
+              type="button"
+              disabled={!isActive}
+              className={`mode-link ${isActive ? "mode-link--active" : "mode-link--soon"}`}
+              aria-label={mode.label}
+              title={mode.label}
+            >
+              <span
+                className={`mode-link-icon ${
+                  isActive ? "text-accent shadow-[0_0_18px_rgba(0,255,163,0.18)]" : "text-secondary"
+                }`}
+              >
+                {mode.key === "odd-even" ? <OddEvenIcon /> : <RpsIcon />}
+              </span>
+              <span className="mode-link-text">{isActive ? "Ao vivo" : "Em breve"}</span>
+              <span className="mode-tooltip">{mode.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </aside>
+  );
 }
 
 function HistoryFeed({ history }: { history: HistoryItem[] }) {
@@ -192,9 +262,7 @@ function NameEditor({
       <div className="flex flex-col gap-3 text-left">
         <div>
           <p className="eyebrow">Seu nome</p>
-          <p className="mt-2 text-sm leading-6 text-white/72">
-            Ajuste o nome antes de marcar ready.
-          </p>
+          <p className="mt-2 text-sm leading-6 text-white/72">Ajuste o nome antes de marcar ready.</p>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -277,12 +345,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const intervalMs = gameState?.phase === "playing" ? 40 : 250;
     const timer = window.setInterval(() => {
       setNow(Date.now());
-    }, 250);
+    }, intervalMs);
 
     return () => window.clearInterval(timer);
-  }, []);
+  }, [gameState?.phase]);
 
   const currentPlayer = useMemo(() => {
     if (!gameState || !meta) return null;
@@ -421,9 +490,7 @@ export default function App() {
                 <ReadySummaryCard
                   title="Rival"
                   name={opponentPlayer?.name || "Aguardando rival"}
-                  status={
-                    !opponentPlayer ? "Sem conexao" : opponentPlayer.ready ? "Ready" : "Aguardando"
-                  }
+                  status={!opponentPlayer ? "Sem conexao" : opponentPlayer.ready ? "Ready" : "Aguardando"}
                   variant={!opponentPlayer ? "default" : opponentPlayer.ready ? "success" : "active"}
                 />
               </div>
@@ -458,7 +525,13 @@ export default function App() {
               <StatusPill label={`Round ${gameState?.round || 1}`} variant="active" />
             </div>
 
-            <TimerBar secondsLeft={secondsLeft} maxSeconds={25} isActive label="Tempo da rodada" />
+            <TimerBar
+              currentTime={now}
+              deadlineAt={gameState?.deadlineAt || null}
+              maxSeconds={15}
+              isActive
+              label="Tempo da rodada"
+            />
           </div>
         </SurfaceCard>
 
@@ -467,9 +540,7 @@ export default function App() {
             <div className="relative z-10 flex flex-col gap-5 text-left">
               <div>
                 <p className="eyebrow">Paridade</p>
-                <p className="mt-2 text-sm leading-6 text-textMuted">
-                  Quem escolhe primeiro fica com o lado.
-                </p>
+                <p className="mt-2 text-sm leading-6 text-textMuted">Quem escolhe primeiro fica com o lado.</p>
               </div>
 
               <ParityToggle
@@ -492,9 +563,7 @@ export default function App() {
             <div className="relative z-10 flex flex-col gap-5 text-left">
               <div>
                 <p className="eyebrow">Numero</p>
-                <p className="mt-2 text-sm leading-6 text-textMuted">
-                  Escolha de 0 a 5 e confirme.
-                </p>
+                <p className="mt-2 text-sm leading-6 text-textMuted">Escolha de 0 a 5 e confirme.</p>
               </div>
 
               <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
@@ -556,15 +625,11 @@ export default function App() {
           <div className="relative z-10 grid gap-3 text-left md:grid-cols-4">
             <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
               <p className="eyebrow">Seu numero</p>
-              <p className="mt-3 font-display text-4xl text-white">
-                {currentPlayer?.selection?.number ?? "--"}
-              </p>
+              <p className="mt-3 font-display text-4xl text-white">{currentPlayer?.selection?.number ?? "--"}</p>
             </div>
             <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
               <p className="eyebrow">Numero rival</p>
-              <p className="mt-3 font-display text-4xl text-white">
-                {opponentPlayer?.selection?.number ?? "--"}
-              </p>
+              <p className="mt-3 font-display text-4xl text-white">{opponentPlayer?.selection?.number ?? "--"}</p>
             </div>
             <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
               <p className="eyebrow">Paridade final</p>
@@ -574,9 +639,7 @@ export default function App() {
             </div>
             <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
               <p className="eyebrow">Resumo</p>
-              <p className="mt-3 text-sm leading-6 text-white/74">
-                {getResultCopy(gameState.result.reason)}
-              </p>
+              <p className="mt-3 text-sm leading-6 text-white/74">{getResultCopy(gameState.result.reason)}</p>
             </div>
           </div>
         </SurfaceCard>
@@ -609,98 +672,104 @@ export default function App() {
       <div className="app-shell">
         <div className="arcade-grid" aria-hidden="true" />
 
-        <motion.div
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-          className="stage-shell"
-        >
-          <header className="grid gap-4 lg:grid-cols-[1.05fr,0.95fr]">
-            <SurfaceCard variant="active" size="lg">
-              <div className="relative z-10 flex flex-col gap-4 text-left">
-                <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="platform-shell">
+          <ModeSidebar />
+
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            className="stage-shell"
+          >
+            <header className="grid gap-4 lg:grid-cols-[1.05fr,0.95fr]">
+              <SurfaceCard variant="active" size="lg">
+                <div className="relative z-10 flex flex-col gap-4 text-left">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="eyebrow">Impar ou Par</p>
+                      <h1 className="mt-3 font-display text-4xl leading-none text-white sm:text-5xl">
+                        Sala unica online
+                      </h1>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <StatusPill label={gameState?.roomCode || "SALA-01"} variant="active" />
+                      <StatusPill
+                        label={isConnected ? "Conectado" : "Reconectando"}
+                        variant={isConnected ? "success" : "danger"}
+                      />
+                    </div>
+                  </div>
+
+                  <p className="panel-copy">
+                    {gameState?.infoMessage || "Conectando ao servidor para carregar a sala."}
+                  </p>
+                </div>
+              </SurfaceCard>
+
+              <SurfaceCard size="md">
+                <div className="relative z-10 flex h-full flex-col justify-between gap-4 text-left">
                   <div>
-                    <p className="eyebrow">Impar ou Par</p>
-                    <h1 className="mt-3 font-display text-4xl leading-none text-white sm:text-5xl">
-                      Sala unica online
-                    </h1>
+                    <p className="eyebrow">Seu status</p>
+                    <h2 className="mt-3 font-display text-2xl text-white">
+                      {gameState ? formatPhaseTitle(gameState.phase) : "Conectando"}
+                    </h2>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <StatusPill label={gameState?.roomCode || "SALA-01"} variant="active" />
                     <StatusPill
-                      label={isConnected ? "Conectado" : "Reconectando"}
-                      variant={isConnected ? "success" : "danger"}
+                      label={
+                        meta?.slot !== null && meta?.slot !== undefined
+                          ? `Jogador ${Number(meta.slot) + 1}`
+                          : "Sem vaga"
+                      }
+                      variant={isSpectator ? "danger" : "success"}
+                      size="sm"
+                    />
+                    <StatusPill
+                      label={gameState ? `${gameState.players.length}/2 online` : "0/2 online"}
+                      variant={gameState?.players.length === 2 ? "success" : "default"}
+                      size="sm"
                     />
                   </div>
                 </div>
+              </SurfaceCard>
+            </header>
 
-                <p className="panel-copy">
-                  {gameState?.infoMessage || "Conectando ao servidor para carregar a sala."}
-                </p>
-              </div>
-            </SurfaceCard>
-
-            <SurfaceCard size="md">
-              <div className="relative z-10 flex h-full flex-col justify-between gap-4 text-left">
-                <div>
-                  <p className="eyebrow">Seu status</p>
-                  <h2 className="mt-3 font-display text-2xl text-white">
-                    {gameState ? formatPhaseTitle(gameState.phase) : "Conectando"}
-                  </h2>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <StatusPill
-                    label={meta?.slot !== null && meta?.slot !== undefined ? `Jogador ${Number(meta.slot) + 1}` : "Sem vaga"}
-                    variant={isSpectator ? "danger" : "success"}
-                    size="sm"
-                  />
-                  <StatusPill
-                    label={gameState ? `${gameState.players.length}/2 online` : "0/2 online"}
-                    variant={gameState?.players.length === 2 ? "success" : "default"}
-                    size="sm"
-                  />
-                </div>
-              </div>
-            </SurfaceCard>
-          </header>
-
-          <main>
-            <SurfaceCard variant={roomVariant} size="lg" className="relative">
-              <div className="scanline" />
-              <div className="relative z-10 flex flex-col gap-6 text-left">
-                {!gameState ? (
-                  <div className="grid min-h-[22rem] place-items-center text-center">
-                    <div className="max-w-md">
-                      <p className="eyebrow">Conectando</p>
-                      <h2 className="mt-3 panel-title">Entrando na sala</h2>
-                      <p className="mt-3 panel-copy">
-                        Estamos aguardando o primeiro estado do servidor.
-                      </p>
+            <main>
+              <SurfaceCard variant={roomVariant} size="lg" className="relative">
+                <div className="scanline" />
+                <div className="relative z-10 flex flex-col gap-6 text-left">
+                  {!gameState ? (
+                    <div className="grid min-h-[22rem] place-items-center text-center">
+                      <div className="max-w-md">
+                        <p className="eyebrow">Conectando</p>
+                        <h2 className="mt-3 panel-title">Entrando na sala</h2>
+                        <p className="mt-3 panel-copy">Estamos aguardando o primeiro estado do servidor.</p>
+                      </div>
                     </div>
-                  </div>
-                ) : isSpectator ? (
-                  <div className="grid min-h-[22rem] place-items-center text-center">
-                    <div className="max-w-lg">
-                      <StatusPill label="Sala cheia" variant="danger" />
-                      <h2 className="mt-4 panel-title">Os dois lugares ja estao ocupados</h2>
-                      <p className="mt-3 panel-copy">
-                        Espere uma vaga abrir e recarregue a pagina para entrar.
-                      </p>
+                  ) : isSpectator ? (
+                    <div className="grid min-h-[22rem] place-items-center text-center">
+                      <div className="max-w-lg">
+                        <StatusPill label="Sala cheia" variant="danger" />
+                        <h2 className="mt-4 panel-title">Os dois lugares ja estao ocupados</h2>
+                        <p className="mt-3 panel-copy">
+                          Espere uma vaga abrir e recarregue a pagina para entrar.
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ) : gameState.phase === "playing" ? (
-                  renderPlayingScreen()
-                ) : gameState.phase === "result" ? (
-                  renderResultScreen()
-                ) : (
-                  renderReadyScreen()
-                )}
-              </div>
-            </SurfaceCard>
-          </main>
-        </motion.div>
+                  ) : gameState.phase === "playing" ? (
+                    renderPlayingScreen()
+                  ) : gameState.phase === "result" ? (
+                    renderResultScreen()
+                  ) : (
+                    renderReadyScreen()
+                  )}
+                </div>
+              </SurfaceCard>
+            </main>
+          </motion.div>
+        </div>
       </div>
     </MotionConfig>
   );

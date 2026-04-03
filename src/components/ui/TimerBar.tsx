@@ -1,48 +1,36 @@
-import { motion } from "framer-motion";
-import type { UiVariant } from "./types";
+import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "./utils";
 
-const fillClasses: Record<UiVariant, string> = {
-  default: "from-primary/80 to-secondary/80",
-  active: "from-secondary to-primary",
-  success: "from-accent to-secondary",
-  danger: "from-danger to-warning",
-};
-
 interface TimerBarProps {
-  secondsLeft: number;
+  currentTime: number;
+  deadlineAt: number | null;
   maxSeconds?: number;
   label?: string;
   isActive?: boolean;
 }
 
 export function TimerBar({
-  secondsLeft,
+  currentTime,
+  deadlineAt,
   maxSeconds = 10,
   label = "Timer da rodada",
   isActive = false,
 }: TimerBarProps) {
-  const clampedSeconds = Math.max(0, Math.min(maxSeconds, secondsLeft));
-  const progress = (clampedSeconds / maxSeconds) * 100;
-  const variant: UiVariant =
-    clampedSeconds === 0 ? "danger" : clampedSeconds <= 3 ? "danger" : "success";
+  const reduceMotion = useReducedMotion();
+  const remainingMs = deadlineAt ? Math.max(deadlineAt - currentTime, 0) : 0;
+  const progress = deadlineAt ? Math.max((remainingMs / (maxSeconds * 1000)) * 100, 0) : 0;
+  const clampedSeconds = Math.max(Math.ceil(remainingMs / 1000), 0);
+  const isDanger = isActive && remainingMs > 0 && remainingMs <= 3000;
 
   return (
     <div className="relative z-10 flex flex-col gap-3">
       <div className="flex items-end justify-between gap-3">
-        <div>
-          <p className="eyebrow">{label}</p>
-          <p className="mt-2 text-sm text-textMuted">
-            {isActive
-              ? "Barra animada com alerta forte nos 3s finais."
-              : "O cronometro aparece somente durante a rodada."}
-          </p>
-        </div>
+        <p className="eyebrow">{label}</p>
         <div
           className={cn(
-            "rounded-full border px-3 py-1 font-display text-2xl",
-            clampedSeconds <= 3
-              ? "border-danger/35 bg-danger/12 text-danger"
+            "timer-clock rounded-full border px-3 py-1 font-display text-2xl",
+            isDanger
+              ? "timer-clock-alert border-danger/45 bg-danger/14 text-danger"
               : "border-white/10 bg-white/5 text-white",
           )}
         >
@@ -50,12 +38,14 @@ export function TimerBar({
         </div>
       </div>
 
-      <div className="timer-track">
+      <div className={cn("timer-track", isDanger && "timer-track-alert")}>
         <motion.div
-          className={cn("timer-fill bg-gradient-to-r", fillClasses[variant])}
-          animate={{ width: `${progress}%` }}
-          transition={{ duration: isActive ? 0.8 : 0.35, ease: "easeOut" }}
-        />
+          className={cn("timer-fill", isDanger && "timer-fill-alert")}
+          style={{ width: `${progress}%` }}
+          transition={{ duration: reduceMotion ? 0.01 : 0 }}
+        >
+          <span className={cn("timer-sheen", isDanger && "timer-sheen-alert")} />
+        </motion.div>
       </div>
     </div>
   );

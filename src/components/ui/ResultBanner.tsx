@@ -5,26 +5,23 @@ import { cn, formatParity } from "./utils";
 
 const outcomeCopy: Record<
   ResultOutcome,
-  { label: string; title: string; body: string; classes: string }
+  { label: string; title: string; classes: string }
 > = {
   win: {
     label: "Vitoria",
     title: "Voce venceu a rodada",
-    body: "O destaque de sucesso sobe o brilho do placar e mantem a leitura centralizada.",
     classes:
       "border-accent/35 bg-[radial-gradient(circle_at_top,_rgba(0,255,163,0.14),_transparent_36%)] text-white",
   },
   lose: {
     label: "Derrota",
     title: "A rodada foi para o outro lado",
-    body: "A interface reduz o glow e puxa o foco para a soma final da jogada.",
     classes:
       "border-danger/35 bg-[radial-gradient(circle_at_top,_rgba(255,84,120,0.14),_transparent_34%)] text-white",
   },
   draw: {
     label: "Empate",
     title: "A rodada terminou sem vencedor",
-    body: "Este estado cobre combinacoes em que os lados escolhidos nao definem um unico vencedor.",
     classes:
       "border-secondary/35 bg-[radial-gradient(circle_at_top,_rgba(0,209,255,0.12),_transparent_34%)] text-white",
   },
@@ -99,7 +96,6 @@ export function ResultBanner({ result, playerParity, className }: ResultBannerPr
           <div>
             <p className="eyebrow">Resultado da rodada</p>
             <h3 className="mt-3 font-display text-3xl text-white sm:text-4xl">{copy.title}</h3>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-white/72">{copy.body}</p>
             <p className="mt-4 text-sm text-white/62">
               Voce apostou em <span className="font-semibold text-white">{formatParity(playerParity)}</span>.
             </p>

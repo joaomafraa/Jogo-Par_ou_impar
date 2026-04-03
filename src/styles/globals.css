@@ -75,6 +75,10 @@
     @apply relative min-h-screen overflow-hidden px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8;
   }
 
+  .platform-shell {
+    @apply relative mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row;
+  }
+
   .arcade-grid {
     position: absolute;
     inset: -12%;
@@ -97,10 +101,72 @@
   }
 
   .stage-shell {
-    @apply relative mx-auto flex w-full max-w-7xl flex-col gap-4 overflow-hidden rounded-[32px] border border-white/10 bg-surface/65 p-4 shadow-hud backdrop-blur-xl sm:p-6 lg:p-7;
+    @apply relative flex-1 overflow-hidden rounded-[32px] border border-white/10 bg-surface/65 p-4 shadow-hud backdrop-blur-xl sm:p-6 lg:p-7;
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.06),
       0 24px 90px rgba(4, 8, 20, 0.78);
+  }
+
+  .mode-sidebar {
+    @apply relative z-10 flex w-full flex-row items-center gap-3 overflow-x-auto rounded-[28px] border border-white/10 bg-surface/70 p-3 shadow-hud backdrop-blur-xl lg:sticky lg:top-8 lg:w-[96px] lg:min-w-[96px] lg:flex-col lg:overflow-visible lg:p-4;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 20px 60px rgba(4, 8, 20, 0.5);
+  }
+
+  .mode-sidebar::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 32%),
+      radial-gradient(circle at top, rgba(0, 209, 255, 0.12), transparent 35%);
+    pointer-events: none;
+  }
+
+  .mode-sidebar-label {
+    @apply hidden text-[0.68rem] uppercase tracking-[0.32em] text-textMuted lg:block;
+  }
+
+  .mode-nav {
+    @apply relative z-10 flex w-full flex-row gap-3 lg:flex-col;
+  }
+
+  .mode-link {
+    @apply relative flex min-w-[64px] flex-col items-center justify-center gap-2 rounded-[22px] border border-white/10 bg-white/5 p-3 text-white transition duration-200;
+  }
+
+  .mode-link:hover {
+    @apply border-secondary/35 bg-secondary/10;
+    transform: translateY(-1px);
+  }
+
+  .mode-link--active {
+    @apply border-accent/30 bg-accent/10 shadow-[0_0_22px_rgba(0,255,163,0.12)];
+  }
+
+  .mode-link--soon {
+    @apply border-secondary/25 bg-secondary/10;
+  }
+
+  .mode-link-icon {
+    @apply relative flex h-10 w-10 items-center justify-center rounded-[16px] border border-white/10 bg-black/25;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .mode-link-text {
+    @apply text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-white/70 lg:hidden;
+  }
+
+  .mode-tooltip {
+    @apply pointer-events-none absolute left-[calc(100%+14px)] top-1/2 hidden -translate-y-1/2 rounded-full border border-white/10 bg-surfaceElevated/95 px-4 py-2 text-sm font-semibold text-white opacity-0 shadow-neon transition duration-200 lg:block;
+    white-space: nowrap;
+  }
+
+  .mode-link:hover .mode-tooltip,
+  .mode-link:focus-visible .mode-tooltip {
+    @apply opacity-100;
   }
 
   .stage-shell::before {
@@ -235,13 +301,75 @@
   }
 
   .timer-track {
-    @apply h-3 w-full overflow-hidden rounded-full bg-white/10;
-    box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.38);
+    @apply relative h-3 w-full overflow-hidden rounded-full bg-white/10;
+    box-shadow:
+      inset 0 1px 8px rgba(0, 0, 0, 0.38),
+      0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+
+  .timer-track::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.06), transparent 18%, transparent 82%, rgba(255, 255, 255, 0.04)),
+      linear-gradient(90deg, rgba(0, 209, 255, 0.06), transparent);
+    pointer-events: none;
   }
 
   .timer-fill {
-    @apply h-full rounded-full;
+    @apply relative h-full rounded-full;
     background-image: linear-gradient(90deg, rgba(0, 255, 163, 0.78), rgba(0, 209, 255, 0.92));
+    box-shadow:
+      0 0 18px rgba(0, 209, 255, 0.34),
+      0 0 32px rgba(0, 255, 163, 0.18);
+  }
+
+  .timer-sheen {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(
+        120deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.02) 28%,
+        rgba(255, 255, 255, 0.42) 50%,
+        rgba(255, 255, 255, 0.05) 72%,
+        transparent 100%
+      );
+    animation: timerSheen 1.4s linear infinite;
+    mix-blend-mode: screen;
+  }
+
+  .timer-track-alert {
+    box-shadow:
+      inset 0 1px 8px rgba(0, 0, 0, 0.42),
+      0 0 18px rgba(255, 84, 120, 0.24);
+    animation: timerAlertGlow 0.48s ease-in-out infinite;
+  }
+
+  .timer-fill-alert {
+    box-shadow:
+      0 0 22px rgba(255, 184, 77, 0.52),
+      0 0 40px rgba(255, 84, 120, 0.42);
+  }
+
+  .timer-sheen-alert {
+    animation-duration: 0.38s;
+  }
+
+  .timer-clock {
+    transition:
+      transform 180ms ease,
+      box-shadow 180ms ease,
+      border-color 180ms ease;
+  }
+
+  .timer-clock-alert {
+    box-shadow:
+      0 0 20px rgba(255, 84, 120, 0.24),
+      0 0 36px rgba(255, 184, 77, 0.16);
+    animation: timerClockPulse 0.46s ease-in-out infinite;
   }
 
   .scanline {
@@ -319,6 +447,43 @@
 
   100% {
     transform: translate3d(34px, 34px, 0);
+  }
+}
+
+@keyframes timerSheen {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(140%);
+  }
+}
+
+@keyframes timerAlertGlow {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 1px 8px rgba(0, 0, 0, 0.42),
+      0 0 16px rgba(255, 84, 120, 0.24);
+  }
+
+  50% {
+    box-shadow:
+      inset 0 1px 8px rgba(0, 0, 0, 0.42),
+      0 0 32px rgba(255, 84, 120, 0.42),
+      0 0 56px rgba(255, 184, 77, 0.24);
+  }
+}
+
+@keyframes timerClockPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.06);
   }
 }
 
