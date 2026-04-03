@@ -40,8 +40,9 @@ export function PrimaryAction({
   return (
     <motion.button
       type="button"
-      whileHover={props.disabled ? undefined : { y: -1 }}
-      whileTap={props.disabled ? undefined : { scale: 0.99 }}
+      whileHover={props.disabled ? undefined : { y: -2, scale: 1.01 }}
+      whileTap={props.disabled ? undefined : { y: 0, scale: 0.975 }}
+      transition={{ type: "spring", stiffness: 340, damping: 22, mass: 0.9 }}
       className={cn("action-btn", sizeClasses[size], variantClasses[variant], className)}
       {...props}
     >

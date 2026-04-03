@@ -14,6 +14,7 @@ type AppView = "home" | "joining" | "in-room" | "expired";
 type GamePhase = "waiting" | "ready" | "playing" | "result";
 type GameModeKey = "odd-even" | "rps";
 type RpsChoice = "rock" | "paper" | "scissors";
+type RoomScreen = "waiting-player" | "mode-select" | "playing" | "result";
 
 interface HistoryItem {
   round: number;
@@ -97,6 +98,23 @@ function buildRoomLink(roomCode: string) {
   return `${window.location.origin}/sala/${roomCode}`;
 }
 
+function parseRoomCodeInput(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return null;
+
+  const routeMatch = normalized.match(/\/sala\/([A-Za-z0-9_-]+)/i);
+  if (routeMatch?.[1]) {
+    return routeMatch[1].toUpperCase();
+  }
+
+  const plainCode = normalized.match(/^[A-Za-z0-9_-]{4,}$/);
+  if (plainCode) {
+    return normalized.toUpperCase();
+  }
+
+  return null;
+}
+
 function navigateToRoom(roomCode: string) {
   window.history.pushState({}, "", `/sala/${roomCode}`);
 }
@@ -119,13 +137,6 @@ function getRoomVariant(phase: GamePhase, secondsLeft: number): UiVariant {
 function formatParityLabel(parity: ParityChoice | null | undefined) {
   if (!parity) return "--";
   return parity === "odd" ? "Impar" : "Par";
-}
-
-function formatPhaseTitle(phase: GamePhase) {
-  if (phase === "waiting") return "Aguardando segundo jogador";
-  if (phase === "ready") return "Sala pronta";
-  if (phase === "playing") return "Rodada em andamento";
-  return "Resultado da rodada";
 }
 
 function formatModeLabel(mode: GameModeKey) {
@@ -196,64 +207,6 @@ function ScissorsIcon() {
       <path d="M10.2 9.1 18 4.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
       <path d="M10.2 14.9 18 19.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
-  );
-}
-
-function HistoryFeed({ history }: { history: HistoryItem[] }) {
-  return (
-    <SurfaceCard size="md" className="bg-black/10">
-      <div className="relative z-10 flex flex-col gap-4 text-left">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="eyebrow">Historico</p>
-            <h3 className="mt-2 font-display text-2xl text-white">Ultimas partidas</h3>
-          </div>
-          <StatusPill label={`${history.length} registros`} variant="active" size="sm" />
-        </div>
-        {history.length === 0 ? (
-          <div className="rounded-[22px] border border-dashed border-white/12 bg-white/5 p-5">
-            <p className="text-sm leading-6 text-white/72">O historico aparece aqui assim que a primeira rodada terminar.</p>
-          </div>
-        ) : (
-          <div className="max-h-[26rem] space-y-3 overflow-y-auto pr-1">
-            {history.map((item) => (
-              <motion.div
-                key={`${item.round}-${item.createdAt}`}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-[22px] border border-white/10 bg-white/5 p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="eyebrow">Round {item.round}</p>
-                    <p className="mt-2 text-base font-semibold text-white">{item.winnerName ? `${item.winnerName} venceu` : "Rodada finalizada"}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <StatusPill label={formatModeLabel(item.mode)} variant="active" size="sm" />
-                    {item.mode === "odd-even" ? <StatusPill label={`Soma ${item.sum} - ${formatParityLabel(item.parity)}`} variant="success" size="sm" /> : null}
-                  </div>
-                </div>
-                <div className="mt-4 space-y-2">
-                  {item.players.map((player) => (
-                    <div
-                      key={`${item.round}-${player.slot}-${player.name}`}
-                      className="flex items-center justify-between gap-3 rounded-[18px] border border-white/10 bg-black/20 px-3 py-2"
-                    >
-                      <p className="text-sm font-medium text-white">{player.name}</p>
-                      <p className="text-sm text-white/68">
-                        {item.mode === "rps"
-                          ? `${formatRpsChoice(player.choice)}${player.auto ? " - auto" : ""}`
-                          : `${formatParityLabel(player.parity)} - ${player.number ?? "--"}${player.auto ? " - auto" : ""}`}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
-    </SurfaceCard>
   );
 }
 
@@ -456,51 +409,52 @@ function RpsResultPanel({
   );
 }
 
-function ModeSidebar({
-  currentMode,
-  confirmedSlots,
-  currentSlot,
-  interactive,
+function ModeOptionCard({
+  mode,
+  active,
+  confirmed,
+  disabled,
   onSelect,
 }: {
-  currentMode: GameModeKey;
-  confirmedSlots: number[];
-  currentSlot: number | null | undefined;
-  interactive: boolean;
+  mode: GameModeKey;
+  active: boolean;
+  confirmed: boolean;
+  disabled: boolean;
   onSelect: (mode: GameModeKey) => void;
 }) {
-  const playerConfirmed = currentSlot !== null && currentSlot !== undefined && confirmedSlots.includes(currentSlot);
-  const modes: Array<{ key: GameModeKey; label: string }> = [
-    { key: "odd-even", label: "Impar ou Par" },
-    { key: "rps", label: "Pedra Papel Tesoura" },
-  ];
+  const isOddEven = mode === "odd-even";
 
   return (
-    <aside className="mode-sidebar">
-      <span className="mode-sidebar-label">Jogos</span>
-      <nav className="mode-nav" aria-label="Modos de jogo">
-        {modes.map((mode) => {
-          const isActive = currentMode === mode.key;
-          return (
-            <button
-              key={mode.key}
-              type="button"
-              disabled={!interactive}
-              className={`mode-link ${isActive ? "mode-link--active" : "mode-link--soon"} ${isActive && playerConfirmed ? "mode-link--confirmed" : ""}`}
-              aria-label={mode.label}
-              title={mode.label}
-              onClick={() => onSelect(mode.key)}
-            >
-              <span className={`mode-link-icon ${isActive ? "text-accent shadow-[0_0_18px_rgba(0,255,163,0.18)]" : "text-secondary"}`}>
-                {mode.key === "odd-even" ? <OddEvenIcon /> : <RpsModeIcon />}
-              </span>
-              <span className="mode-link-text">{isActive ? "Ativo" : "Modo"}</span>
-              <span className="mode-tooltip">{mode.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-    </aside>
+    <motion.button
+      type="button"
+      whileHover={disabled ? undefined : { y: -4, scale: 1.01 }}
+      whileTap={disabled ? undefined : { scale: 0.98 }}
+      transition={{ type: "spring", stiffness: 320, damping: 24 }}
+      disabled={disabled}
+      onClick={() => onSelect(mode)}
+      className={`mode-card ${active ? "mode-card--active" : ""} ${active && confirmed ? "mode-card--confirmed" : ""}`}
+    >
+      <div className="relative z-10 flex h-full flex-col gap-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="mode-card-icon">
+            {isOddEven ? <OddEvenIcon /> : <RpsModeIcon />}
+          </div>
+          <StatusPill
+            label={active ? (confirmed ? "Confirmado" : "Selecionado") : "Disponivel"}
+            variant={active ? (confirmed ? "success" : "active") : "default"}
+            size="sm"
+          />
+        </div>
+        <div>
+          <h3 className="font-display text-3xl text-white">{formatModeLabel(mode)}</h3>
+          <p className="mt-3 text-sm leading-6 text-white/72">
+            {isOddEven
+              ? "Escolha um numero, trave impar ou par primeiro e dispute a soma."
+              : "Escolha pedra, papel ou tesoura com revelacao em tempo real."}
+          </p>
+        </div>
+      </div>
+    </motion.button>
   );
 }
 
@@ -517,6 +471,7 @@ export default function App() {
   const [selectedRps, setSelectedRps] = useState<RpsChoice>("rock");
   const [submittedSelection, setSubmittedSelection] = useState(false);
   const [draftName, setDraftName] = useState("");
+  const [joinInput, setJoinInput] = useState("");
   const [systemMessage, setSystemMessage] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const roomCodeFromUrl = useMemo(() => getRoomCodeFromPath(), [appView]);
@@ -654,11 +609,19 @@ export default function App() {
   const currentSlot = meta?.slot;
   const modeConfirmed = Boolean(gameState && gameState.modeConfirmedSlots.includes(0) && gameState.modeConfirmedSlots.includes(1));
   const currentConfirmed = currentSlot !== null && currentSlot !== undefined && Boolean(gameState?.modeConfirmedSlots.includes(currentSlot));
+  const roomScreen: RoomScreen = useMemo(() => {
+    if (!gameState || gameState.players.length < 2) {
+      return "waiting-player";
+    }
+    if (gameState.phase === "playing") return "playing";
+    if (gameState.phase === "result") return "result";
+    return "mode-select";
+  }, [gameState]);
   const canReady =
     Boolean(currentPlayer) &&
     !isSpectator &&
     modeConfirmed &&
-    gameState?.phase !== "playing" &&
+    roomScreen === "mode-select" &&
     !currentPlayer?.ready;
   const canSubmit =
     Boolean(currentPlayer) &&
@@ -713,6 +676,31 @@ export default function App() {
 
   function handleLeaveRoom() {
     socketRef.current?.emit("room:leave");
+  }
+
+  function handleJoinRoom() {
+    const parsedRoomCode = parseRoomCodeInput(joinInput);
+    if (!parsedRoomCode) {
+      setSystemMessage("Digite um codigo de sala valido ou cole o link completo.");
+      return;
+    }
+
+    setSystemMessage(null);
+    attemptedJoinRef.current = parsedRoomCode;
+    setMeta(null);
+    setGameState(null);
+    navigateToRoom(parsedRoomCode);
+    setAppView("joining");
+
+    const socket = socketRef.current;
+    if (!socket) return;
+
+    if (socket.connected) {
+      socket.emit("room:join", { roomCode: parsedRoomCode });
+      return;
+    }
+
+    ensureConnected();
   }
 
   function handleSelectMode(mode: GameModeKey) {
@@ -789,9 +777,30 @@ export default function App() {
               <StatusPill label="2 jogadores" variant="success" size="sm" />
               <StatusPill label="2 modos" variant="active" size="sm" />
             </div>
-            <PrimaryAction variant="active" size="lg" onClick={handleCreateRoom}>
-              Criar sala
-            </PrimaryAction>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <PrimaryAction variant="active" size="lg" onClick={handleCreateRoom}>
+                Criar sala
+              </PrimaryAction>
+              <div className="flex-1 rounded-[24px] border border-white/10 bg-white/5 p-3">
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    value={joinInput}
+                    onChange={(event) => setJoinInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handleJoinRoom();
+                      }
+                    }}
+                    className="w-full rounded-[18px] border border-white/10 bg-black/25 px-4 py-3 text-base text-white outline-none transition focus:border-secondary/50 focus:bg-black/35"
+                    placeholder="Cole o codigo ou o link da sala"
+                  />
+                  <PrimaryAction variant="success" size="lg" onClick={handleJoinRoom}>
+                    Entrar
+                  </PrimaryAction>
+                </div>
+              </div>
+            </div>
           </div>
         </SurfaceCard>
 
@@ -839,74 +848,147 @@ export default function App() {
     );
   }
 
-  function renderReadyScreen() {
+  function renderWaitingPlayerScreen() {
     return (
-      <div className="grid gap-4 xl:grid-cols-[0.95fr,1.05fr]">
-        <div className="grid gap-4">
-          <SurfaceCard variant="active" size="lg">
-            <div className="relative z-10 flex flex-col gap-5 text-left">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="eyebrow">Sala criada</p>
-                  <h2 className="mt-3 panel-title">{formatPhaseTitle(gameState?.phase || "waiting")}</h2>
-                  <p className="mt-3 panel-copy">
-                    {gameState?.infoMessage || "Compartilhe o link, confirme o modo e aguarde o segundo jogador entrar."}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2 justify-end">
-                  <StatusPill label={formatModeLabel(gameState?.mode || "odd-even")} variant="active" />
-                  <StatusPill label={gameState?.players.length === 2 ? "2 jogadores" : "1 jogador"} variant={gameState?.players.length === 2 ? "success" : "active"} />
-                </div>
+      <div className="grid gap-4 lg:grid-cols-[1.05fr,0.95fr]">
+        <SurfaceCard variant="active" size="lg">
+          <div className="relative z-10 flex flex-col gap-5 text-left">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="eyebrow">Convite</p>
+                <h2 className="mt-3 panel-title">Aguardando o segundo jogador</h2>
+                <p className="mt-3 panel-copy">
+                  Compartilhe o link da sala e ajuste seu nome enquanto a outra pessoa entra.
+                </p>
               </div>
+              <StatusPill label="1 de 2 jogadores" variant="active" />
+            </div>
 
-              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 text-left">
-                <p className="eyebrow">Link da sala</p>
-                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-                  <div className="min-w-0 flex-1 rounded-[18px] border border-white/10 bg-black/25 px-4 py-3 text-sm text-white/78">
-                    <span className="block truncate">{roomLink}</span>
-                  </div>
-                  <PrimaryAction variant="active" size="md" onClick={copyRoomLink}>
-                    Copiar link
-                  </PrimaryAction>
-                  <PrimaryAction variant="danger" size="md" onClick={handleLeaveRoom}>
-                    Sair da sala
-                  </PrimaryAction>
+            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 text-left">
+              <p className="eyebrow">Convite da sala</p>
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                <div className="min-w-0 flex-1 rounded-[18px] border border-white/10 bg-black/25 px-4 py-3 text-sm text-white/78">
+                  <span className="block truncate">{roomLink}</span>
                 </div>
+                <PrimaryAction variant="active" size="md" onClick={copyRoomLink}>
+                  Copiar link
+                </PrimaryAction>
               </div>
+            </div>
 
-              <ModeConfirmCard
-                mode={gameState?.mode || "odd-even"}
-                confirmedSlots={gameState?.modeConfirmedSlots || []}
-                currentSlot={currentSlot}
-                canConfirm={!isSpectator}
-                onConfirm={handleConfirmMode}
-              />
+            <NameEditor
+              value={draftName}
+              onChange={setDraftName}
+              onSave={saveName}
+              disabled={!currentPlayer}
+            />
 
-              <NameEditor
-                value={draftName}
-                onChange={setDraftName}
-                onSave={saveName}
-                disabled={!currentPlayer || Boolean(currentPlayer.ready)}
-              />
+            <div className="grid gap-3">
+              <ReadySummaryCard title="Voce" name={currentPlayer?.name || "Sua vaga"} status="Na sala" variant="success" />
+              <ReadySummaryCard title="Rival" name="Aguardando entrada" status="Sem conexao" variant="default" />
+            </div>
+          </div>
+        </SurfaceCard>
 
-              <div className="grid gap-3">
-                <ReadySummaryCard title="Voce" name={currentPlayer?.name || "Sua vaga"} status={currentPlayer?.ready ? "Pronto" : "Aguardando"} variant={currentPlayer?.ready ? "success" : "default"} />
-                <ReadySummaryCard title="Rival" name={opponentPlayer?.name || "Aguardando entrada"} status={!opponentPlayer ? "Sem conexao" : opponentPlayer.ready ? "Pronto" : "Aguardando"} variant={!opponentPlayer ? "default" : opponentPlayer.ready ? "success" : "active"} />
+        <SurfaceCard size="lg" className="bg-black/10">
+          <div className="relative z-10 flex h-full flex-col justify-between gap-5 text-left">
+            <div>
+              <p className="eyebrow">Proxima etapa</p>
+              <h3 className="mt-3 font-display text-3xl text-white">Escolha do modo</h3>
+              <p className="mt-3 text-sm leading-6 text-white/72">
+                Assim que o segundo jogador entrar, a tela muda automaticamente para a selecao do jogo.
+              </p>
+            </div>
+            <div className="grid gap-3">
+              <StatusPill label="Nome editavel" variant="success" size="sm" />
+              <StatusPill label="Link pronto para compartilhar" variant="active" size="sm" />
+              <StatusPill label="Sala ativa" variant="active" size="sm" />
+            </div>
+            <div className="flex">
+              <PrimaryAction variant="danger" size="md" onClick={handleLeaveRoom}>
+                Sair da sala
+              </PrimaryAction>
+            </div>
+          </div>
+        </SurfaceCard>
+      </div>
+    );
+  }
+
+  function renderModeSelectScreen() {
+    return (
+      <div className="grid gap-4">
+        <SurfaceCard variant="active" size="lg">
+          <div className="relative z-10 flex flex-col gap-5 text-left">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="eyebrow">Escolha do modo</p>
+                <h2 className="mt-3 panel-title">Os dois jogadores ja estao na sala</h2>
+                <p className="mt-3 panel-copy">
+                  Escolham o jogo, confirmem o modo e so depois marquem como pronto para iniciar.
+                </p>
               </div>
+              <div className="flex flex-wrap gap-2">
+                <StatusPill label="2 de 2 jogadores" variant="success" />
+                <StatusPill label={modeConfirmed ? "Modo confirmado" : "Modo pendente"} variant={modeConfirmed ? "success" : "active"} />
+              </div>
+            </div>
 
-              <ReadyButton
-                isSynced={Boolean(currentPlayer?.ready)}
-                disabled={!canReady}
-                size="lg"
-                onClick={sendReady}
-              >
-                {currentPlayer?.ready ? "Pronto enviado" : modeConfirmed ? "Marcar como pronto" : "Confirme o modo primeiro"}
-              </ReadyButton>
+            <div className="grid gap-3 md:grid-cols-2">
+              <ReadySummaryCard title="Jogador 1" name={gameState?.players.find((player) => player.slot === 0)?.name || "Jogador 1"} status={gameState?.players.find((player) => player.slot === 0)?.ready ? "Pronto" : "Aguardando"} variant={gameState?.players.find((player) => player.slot === 0)?.ready ? "success" : "default"} />
+              <ReadySummaryCard title="Jogador 2" name={gameState?.players.find((player) => player.slot === 1)?.name || "Jogador 2"} status={gameState?.players.find((player) => player.slot === 1)?.ready ? "Pronto" : "Aguardando"} variant={gameState?.players.find((player) => player.slot === 1)?.ready ? "success" : "default"} />
+            </div>
+          </div>
+        </SurfaceCard>
+
+        <div className="mode-grid">
+          {(["odd-even", "rps"] as GameModeKey[]).map((mode) => (
+            <ModeOptionCard
+              key={mode}
+              mode={mode}
+              active={gameState?.mode === mode}
+              confirmed={gameState?.mode === mode && currentConfirmed}
+              disabled={isSpectator || gameState?.phase === "playing"}
+              onSelect={handleSelectMode}
+            />
+          ))}
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[1.05fr,0.95fr]">
+          <ModeConfirmCard
+            mode={gameState?.mode || "odd-even"}
+            confirmedSlots={gameState?.modeConfirmedSlots || []}
+            currentSlot={currentSlot}
+            canConfirm={!isSpectator}
+            onConfirm={handleConfirmMode}
+          />
+
+          <SurfaceCard size="md" className="bg-black/10">
+            <div className="relative z-10 flex h-full flex-col justify-between gap-4 text-left">
+              <div>
+                <p className="eyebrow">Inicio da partida</p>
+                <p className="mt-3 text-sm leading-6 text-white/72">
+                  {modeConfirmed
+                    ? "O modo ja foi confirmado pelos dois jogadores. Agora voces podem marcar pronto."
+                    : "Quando os dois confirmarem o modo, o botao de pronto sera liberado."}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <PrimaryAction variant="danger" size="md" onClick={handleLeaveRoom}>
+                  Sair da sala
+                </PrimaryAction>
+                <ReadyButton
+                  isSynced={Boolean(currentPlayer?.ready)}
+                  disabled={!canReady}
+                  size="lg"
+                  onClick={sendReady}
+                >
+                  {currentPlayer?.ready ? "Pronto enviado" : modeConfirmed ? "Marcar como pronto" : "Confirme o modo primeiro"}
+                </ReadyButton>
+              </div>
             </div>
           </SurfaceCard>
         </div>
-
-        <HistoryFeed history={gameState?.history || []} />
       </div>
     );
   }
@@ -1141,9 +1223,10 @@ export default function App() {
       );
     }
 
-    if (gameState.phase === "playing") return renderPlayingScreen();
-    if (gameState.phase === "result") return renderResultScreen();
-    return renderReadyScreen();
+    if (roomScreen === "playing") return renderPlayingScreen();
+    if (roomScreen === "result") return renderResultScreen();
+    if (roomScreen === "mode-select") return renderModeSelectScreen();
+    return renderWaitingPlayerScreen();
   }
 
   return (
@@ -1152,24 +1235,16 @@ export default function App() {
         <div className="arcade-grid" aria-hidden="true" />
 
         <div className="platform-shell">
-          <ModeSidebar
-            currentMode={gameState?.mode || "odd-even"}
-            confirmedSlots={gameState?.modeConfirmedSlots || []}
-            currentSlot={currentSlot}
-            interactive={Boolean(gameState) && !isSpectator && gameState?.phase !== "playing"}
-            onSelect={handleSelectMode}
-          />
-
           <motion.div
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="stage-shell"
           >
-            <header className="grid gap-4 lg:grid-cols-[1.05fr,0.95fr]">
+            <header>
               <SurfaceCard variant="active" size="lg">
                 <div className="relative z-10 flex flex-col gap-4 text-left">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="room-topbar">
                     <div>
                       <p className="eyebrow">{gameState ? formatModeLabel(gameState.mode) : "Plataforma de jogos"}</p>
                       <h1 className="mt-3 font-display text-4xl leading-none text-white sm:text-5xl">
@@ -1177,63 +1252,28 @@ export default function App() {
                       </h1>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <StatusPill label={meta?.roomCode || roomCodeFromUrl || "SEM SALA"} variant="active" />
-                      <StatusPill label={isConnected ? "Conectado" : "Desconectado"} variant={isConnected ? "success" : "danger"} />
-                      {appView === "in-room" ? (
-                        <PrimaryAction variant="danger" size="sm" onClick={handleLeaveRoom}>
-                          Sair da sala
-                        </PrimaryAction>
-                      ) : null}
-                    </div>
+                    {appView !== "home" ? (
+                      <div className="room-topbar-meta">
+                        {(meta?.roomCode || roomCodeFromUrl) ? (
+                          <div className="room-code-pill">{meta?.roomCode || roomCodeFromUrl}</div>
+                        ) : null}
+                        <StatusPill label={isConnected ? "Conectado" : "Desconectado"} variant={isConnected ? "success" : "danger"} />
+                        {appView === "in-room" ? (
+                          <PrimaryAction variant="danger" size="sm" onClick={handleLeaveRoom}>
+                            Sair da sala
+                          </PrimaryAction>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
 
                   <p className="panel-copy">
                     {systemMessage
                       || gameState?.infoMessage
                       || (appView === "home"
-                        ? "Crie uma sala para jogar e escolha o modo no lobby."
+                        ? "Crie uma sala para jogar online com um fluxo simples e direto."
                         : "Conectando ao servidor para carregar a sala.")}
                   </p>
-                </div>
-              </SurfaceCard>
-
-              <SurfaceCard size="md">
-                <div className="relative z-10 flex h-full flex-col justify-between gap-4 text-left">
-                  <div>
-                    <p className="eyebrow">Seu status</p>
-                    <h2 className="mt-3 font-display text-2xl text-white">
-                      {appView === "home"
-                        ? "Fora da sala"
-                        : appView === "joining"
-                          ? "Entrando na sala"
-                          : appView === "expired"
-                            ? "Sala encerrada"
-                            : gameState
-                              ? formatPhaseTitle(gameState.phase)
-                              : "Conectando"}
-                    </h2>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <StatusPill
-                      label={meta ? (meta.spectator ? "Espectador" : `Jogador ${Number(meta.slot) + 1}`) : "Sem vaga"}
-                      variant={meta?.spectator ? "active" : meta ? "success" : "default"}
-                      size="sm"
-                    />
-                    <StatusPill
-                      label={gameState ? `${gameState.players.length}/2 online` : "0/2 online"}
-                      variant={gameState?.players.length === 2 ? "success" : "default"}
-                      size="sm"
-                    />
-                    {gameState ? (
-                      <StatusPill
-                        label={modeConfirmed ? "Modo confirmado" : currentConfirmed ? "Aguardando rival confirmar" : "Modo pendente"}
-                        variant={modeConfirmed ? "success" : "active"}
-                        size="sm"
-                      />
-                    ) : null}
-                  </div>
                 </div>
               </SurfaceCard>
             </header>
