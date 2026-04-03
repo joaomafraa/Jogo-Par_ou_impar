@@ -1,0 +1,56 @@
+{
+  "name": "jogo-par_ou_impar",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Preview visual neon arcade do jogo online de Impar ou Par.",
+  "scripts": {
+    "predev": "kill-port 3001",
+    "dev": "concurrently -k -n server,client \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:client": "vite",
+    "dev:server": "node server/server.js",
+    "dev:server:watch": "node --watch server/server.js",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "start": "node server/server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joaomafraa/Jogo-Par_ou_impar.git"
+  },
+  "keywords": [
+    "react",
+    "vite",
+    "tailwind",
+    "framer-motion",
+    "game-ui"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/joaomafraa/Jogo-Par_ou_impar/issues"
+  },
+  "homepage": "https://github.com/joaomafraa/Jogo-Par_ou_impar#readme",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "framer-motion": "^12.23.24",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.4.27",
+    "concurrently": "^9.2.1",
+    "kill-port": "^2.0.1",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.3"
+  }
+}
