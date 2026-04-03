@@ -151,6 +151,16 @@ function setWaitingState(message = "Aguardando 2 jogadores na sala.") {
   emitState();
 }
 
+function setReadyLobbyState(message = "Lobby aberto para revanche.") {
+  clearTimers();
+  room.phase = getActivePlayers().length === 2 ? "ready" : "waiting";
+  room.deadlineAt = null;
+  room.result = null;
+  room.infoMessage = message;
+  resetRoundSelections();
+  emitState();
+}
+
 function startRound() {
   clearTimers();
   room.phase = "playing";
@@ -339,6 +349,10 @@ io.on("connection", (socket) => {
     const currentPlayer = getPlayerBySocket(socket.id);
     if (!currentPlayer || currentPlayer.spectator || room.phase === "playing") {
       return;
+    }
+
+    if (room.phase === "result") {
+      setReadyLobbyState(`${currentPlayer.name} pediu revanche.`);
     }
 
     currentPlayer.ready = Boolean(payload?.ready);

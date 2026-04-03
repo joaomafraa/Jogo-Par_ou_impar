@@ -580,6 +580,26 @@ export default function App() {
             </div>
           </div>
         </SurfaceCard>
+
+        <SurfaceCard variant="success" size="md" className="bg-black/10">
+          <div className="relative z-10 flex flex-col gap-4 text-left sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="eyebrow">Proxima rodada</p>
+              <p className="mt-2 text-sm leading-6 text-white/74">
+                Clique em revanche para voltar ao lobby e preparar uma nova partida.
+              </p>
+            </div>
+
+            <ReadyButton
+              isSynced={Boolean(currentPlayer?.ready)}
+              disabled={!canReady}
+              size="lg"
+              onClick={sendReady}
+            >
+              {currentPlayer?.ready ? "Revanche enviada" : "Pedir revanche"}
+            </ReadyButton>
+          </div>
+        </SurfaceCard>
       </div>
     );
   }
