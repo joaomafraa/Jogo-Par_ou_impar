@@ -35,7 +35,7 @@ export function TimerBar({
           <p className="mt-2 text-sm text-textMuted">
             {isActive
               ? "Barra animada com alerta forte nos 3s finais."
-              : "Componente visível mesmo fora da rodada para validar estados."}
+              : "O cronometro aparece somente durante a rodada."}
           </p>
         </div>
         <div

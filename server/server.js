@@ -294,6 +294,15 @@ function canSubmitSelection(player) {
   );
 }
 
+function sanitizePlayerName(value, fallback) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const normalized = value.replace(/\s+/g, " ").trim().slice(0, 20);
+  return normalized || fallback;
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, room: buildState() });
 });
@@ -339,6 +348,24 @@ io.on("connection", (socket) => {
 
     emitState();
     maybeStartRound();
+  });
+
+  socket.on("player:set-name", (payload) => {
+    const currentPlayer = getPlayerBySocket(socket.id);
+    if (!currentPlayer || currentPlayer.spectator || room.phase === "playing") {
+      return;
+    }
+
+    const fallback = `Jogador ${Number(currentPlayer.slot) + 1}`;
+    const nextName = sanitizePlayerName(payload?.name, fallback);
+
+    if (nextName === currentPlayer.name) {
+      return;
+    }
+
+    currentPlayer.name = nextName;
+    room.infoMessage = `${currentPlayer.name} atualizou o nome.`;
+    emitState();
   });
 
   socket.on("player:pick-parity", (payload) => {
