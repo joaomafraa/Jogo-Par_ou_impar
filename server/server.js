@@ -12,6 +12,7 @@ const distDir = join(rootDir, "dist");
 const PORT = Number(process.env.PORT || 3001);
 const ROUND_TIME_MS = 25_000;
 const READY_DELAY_MS = 1_200;
+const HISTORY_LIMIT = 12;
 
 const app = express();
 app.use(cors());
@@ -33,6 +34,7 @@ function createInitialRoom() {
     phase: "waiting",
     round: 1,
     result: null,
+    history: [],
     deadlineAt: null,
     parityOwnerSlot: null,
     parityChoice: null,
@@ -59,7 +61,9 @@ function getAssignedParity(player) {
     return null;
   }
 
-  return player.slot === room.parityOwnerSlot ? room.parityChoice : getOppositeParity(room.parityChoice);
+  return player.slot === room.parityOwnerSlot
+    ? room.parityChoice
+    : getOppositeParity(room.parityChoice);
 }
 
 function getPublicPlayer(player) {
@@ -87,6 +91,7 @@ function buildState() {
     serverTime: Date.now(),
     deadlineAt: room.deadlineAt,
     result: room.result,
+    history: room.history,
     infoMessage: room.infoMessage,
     players: activePlayers.map(getPublicPlayer),
   };
@@ -202,6 +207,27 @@ function createAutoSelection(player, fallbackIndex) {
   };
 }
 
+function pushHistoryEntry({ players, winner, parity, sum, reason }) {
+  const entry = {
+    round: room.round,
+    createdAt: Date.now(),
+    sum,
+    parity,
+    winnerSlot: winner?.slot ?? null,
+    winnerName: winner?.name ?? null,
+    reason,
+    players: players.map((player) => ({
+      slot: player.slot,
+      name: player.name,
+      number: player.selection?.number ?? null,
+      parity: player.selection?.parity ?? null,
+      auto: player.selection?.auto ?? false,
+    })),
+  };
+
+  room.history = [entry, ...room.history].slice(0, HISTORY_LIMIT);
+}
+
 function resolveRound(reason = "submitted") {
   if (room.phase !== "playing") {
     return;
@@ -225,9 +251,14 @@ function resolveRound(reason = "submitted") {
     player.submitted = true;
   });
 
-  const sum = players.reduce((accumulator, player) => accumulator + (player.selection?.number || 0), 0);
+  const sum = players.reduce(
+    (accumulator, player) => accumulator + (player.selection?.number || 0),
+    0,
+  );
   const parity = sum % 2 === 0 ? "even" : "odd";
   const winner = players.find((player) => player.selection?.parity === parity) || null;
+
+  pushHistoryEntry({ players, winner, parity, sum, reason });
 
   room.phase = "result";
   room.deadlineAt = null;
@@ -245,6 +276,7 @@ function resolveRound(reason = "submitted") {
     player.ready = false;
   });
 
+  room.round += 1;
   emitState();
 }
 
