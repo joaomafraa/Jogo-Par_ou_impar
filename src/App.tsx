@@ -621,7 +621,7 @@ export default function App() {
     Boolean(currentPlayer) &&
     !isSpectator &&
     modeConfirmed &&
-    roomScreen === "mode-select" &&
+    (roomScreen === "mode-select" || roomScreen === "result") &&
     !currentPlayer?.ready;
   const canSubmit =
     Boolean(currentPlayer) &&
