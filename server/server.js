@@ -65,6 +65,10 @@ function getRoom(roomCode) {
   return rooms.get(roomCode) || null;
 }
 
+function getParticipantCount(room) {
+  return room.players.length + room.spectators.length;
+}
+
 function clearTimers(room) {
   if (room.startTimeout) {
     clearTimeout(room.startTimeout);
@@ -424,11 +428,11 @@ function resolveRound(room, reason = "submitted") {
 function scheduleIdleTimeout(room) {
   clearIdleTimeout(room);
 
-  const totalParticipants = room.players.length + room.spectators.length;
+  const totalParticipants = getParticipantCount(room);
   if (totalParticipants === 0) {
     room.idleTimeout = setTimeout(() => {
       const liveRoom = rooms.get(room.roomCode);
-      if (!liveRoom || liveRoom.players.length + liveRoom.spectators.length > 0) {
+      if (!liveRoom || getParticipantCount(liveRoom) > 0) {
         return;
       }
       removeRoom(liveRoom.roomCode);
