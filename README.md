@@ -1,6 +1,7 @@
 # Jogo-Par_ou_impar
 
 Jogo online de Par ou Impar em tempo real para 2 jogadores, com interface animada e comunicacao via WebSocket.
+
 https://impar-par.onrender.com
 
 ## Sobre o projeto
