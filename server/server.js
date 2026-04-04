@@ -514,6 +514,8 @@ function joinRoom(socket, roomCode) {
   if (!room) {
     socket.emit("room:error", {
       message: "Sala nao encontrada. Crie uma nova sala para jogar.",
+      errorCode: "ROOM_NOT_FOUND",
+      attemptedRoomCode: roomCode,
     });
     return;
   }
@@ -607,6 +609,8 @@ io.on("connection", (socket) => {
     if (!roomCode) {
       socket.emit("room:error", {
         message: "Link de sala invalido.",
+        errorCode: "INVALID_ROOM_LINK",
+        attemptedRoomCode: null,
       });
       return;
     }

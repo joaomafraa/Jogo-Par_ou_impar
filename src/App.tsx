@@ -10,11 +10,12 @@ import { SurfaceCard } from "./components/ui/SurfaceCard";
 import { TimerBar } from "./components/ui/TimerBar";
 import type { ParityChoice, ResultVisualState, UiVariant } from "./components/ui/types";
 
-type AppView = "home" | "joining" | "in-room" | "expired";
+type AppView = "home" | "joining" | "in-room" | "expired" | "room-not-found";
 type GamePhase = "waiting" | "ready" | "playing" | "result";
 type GameModeKey = "odd-even" | "rps";
 type RpsChoice = "rock" | "paper" | "scissors";
 type RoomScreen = "waiting-player" | "mode-select" | "playing" | "result";
+type RoomErrorCode = "ROOM_NOT_FOUND" | "INVALID_ROOM_LINK" | "UNKNOWN";
 
 interface HistoryItem {
   round: number;
@@ -86,6 +87,18 @@ interface PlayerMeta {
   roomCode: string;
 }
 
+interface RoomErrorPayload {
+  message: string;
+  errorCode?: string;
+  attemptedRoomCode?: string | null;
+}
+
+interface RoomErrorState {
+  errorCode: RoomErrorCode;
+  attemptedRoomCode: string | null;
+  message: string;
+}
+
 const socketUrl = import.meta.env.VITE_SOCKET_URL || undefined;
 const defaultParity: ParityChoice = "odd";
 
@@ -113,6 +126,13 @@ function parseRoomCodeInput(value: string) {
   }
 
   return null;
+}
+
+function parseRoomErrorCode(errorCode: string | undefined): RoomErrorCode {
+  if (errorCode === "ROOM_NOT_FOUND" || errorCode === "INVALID_ROOM_LINK") {
+    return errorCode;
+  }
+  return "UNKNOWN";
 }
 
 function navigateToRoom(roomCode: string) {
@@ -154,6 +174,21 @@ function getResultCopy(reason: NetworkResult["reason"]) {
   if (reason === "submitted") return "As duas jogadas chegaram antes do tempo.";
   if (reason === "timeout") return "O tempo acabou e a rodada foi fechada automaticamente.";
   return "A rodada foi interrompida por desconexao.";
+}
+
+function getHistoryReasonLabel(reason: HistoryItem["reason"]) {
+  if (reason === "submitted") return "Concluida";
+  if (reason === "timeout") return "Tempo esgotado";
+  return "Desconexao";
+}
+
+function formatHistoryPlayerSelection(player: HistoryItem["players"][number], mode: GameModeKey) {
+  if (mode === "rps") {
+    return `${player.name}: ${formatRpsChoice(player.choice)}${player.auto ? " (auto)" : ""}`;
+  }
+
+  const numberLabel = player.number === null ? "--" : String(player.number);
+  return `${player.name}: ${numberLabel} | ${formatParityLabel(player.parity)}${player.auto ? " (auto)" : ""}`;
 }
 
 function OddEvenIcon() {
@@ -473,6 +508,7 @@ export default function App() {
   const [draftName, setDraftName] = useState("");
   const [joinInput, setJoinInput] = useState("");
   const [systemMessage, setSystemMessage] = useState<string | null>(null);
+  const [roomError, setRoomError] = useState<RoomErrorState | null>(null);
   const [now, setNow] = useState(Date.now());
   const roomCodeFromUrl = useMemo(() => getRoomCodeFromPath(), [appView]);
 
@@ -498,10 +534,12 @@ export default function App() {
       navigateToRoom(payload.roomCode);
       attemptedJoinRef.current = payload.roomCode;
       setSystemMessage("Sala criada. Compartilhe o link para chamar outro jogador.");
+      setRoomError(null);
       setAppView("in-room");
     });
     socket.on("room:joined", () => {
       setSystemMessage(null);
+      setRoomError(null);
       setAppView("in-room");
     });
     socket.on("room:left", () => {
@@ -509,16 +547,27 @@ export default function App() {
       setGameState(null);
       attemptedJoinRef.current = null;
       navigateHome();
+      setRoomError(null);
       setAppView("home");
       setSystemMessage("Voce saiu da sala.");
     });
-    socket.on("room:error", (payload: { message: string }) => {
+    socket.on("room:error", (payload: RoomErrorPayload) => {
+      const errorCode = parseRoomErrorCode(payload.errorCode);
+      const attemptedRoomCode = payload.attemptedRoomCode?.trim()
+        ? payload.attemptedRoomCode.trim().toUpperCase()
+        : attemptedJoinRef.current;
+
+      setRoomError({
+        errorCode,
+        attemptedRoomCode: attemptedRoomCode || null,
+        message: payload.message,
+      });
       setSystemMessage(payload.message);
       setMeta(null);
       setGameState(null);
       attemptedJoinRef.current = null;
       navigateHome();
-      setAppView("home");
+      setAppView(errorCode === "ROOM_NOT_FOUND" ? "room-not-found" : "home");
     });
     socket.on("room:expired", (payload: { message: string }) => {
       setSystemMessage(payload.message);
@@ -526,6 +575,7 @@ export default function App() {
       setGameState(null);
       attemptedJoinRef.current = null;
       navigateHome();
+      setRoomError(null);
       setAppView("expired");
     });
 
@@ -542,6 +592,7 @@ export default function App() {
       setMeta(null);
       setGameState(null);
       setSystemMessage(null);
+      setRoomError(null);
       setAppView(nextRoomCode ? "joining" : "home");
     };
 
@@ -659,6 +710,7 @@ export default function App() {
 
   function handleCreateRoom() {
     setSystemMessage(null);
+    setRoomError(null);
     setAppView("joining");
     pendingCreateRef.current = true;
     attemptedJoinRef.current = null;
@@ -681,11 +733,13 @@ export default function App() {
   function handleJoinRoom() {
     const parsedRoomCode = parseRoomCodeInput(joinInput);
     if (!parsedRoomCode) {
+      setRoomError(null);
       setSystemMessage("Digite um codigo de sala valido ou cole o link completo.");
       return;
     }
 
     setSystemMessage(null);
+    setRoomError(null);
     attemptedJoinRef.current = parsedRoomCode;
     setMeta(null);
     setGameState(null);
@@ -701,6 +755,22 @@ export default function App() {
     }
 
     ensureConnected();
+  }
+
+  function handleRoomNotFoundReturnHome() {
+    navigateHome();
+    setRoomError(null);
+    setSystemMessage(null);
+    setJoinInput("");
+    setAppView("home");
+  }
+
+  function handleRoomNotFoundTryAnotherCode() {
+    navigateHome();
+    setJoinInput(roomError?.attemptedRoomCode || "");
+    setRoomError(null);
+    setSystemMessage(null);
+    setAppView("home");
   }
 
   function handleSelectMode(mode: GameModeKey) {
@@ -848,6 +918,36 @@ export default function App() {
     );
   }
 
+  function renderRoomNotFoundScreen() {
+    const attemptedCode = roomError?.attemptedRoomCode || "SEM-CODIGO";
+
+    return (
+      <div className="grid min-h-[28rem] place-items-center text-center">
+        <div className="max-w-2xl rounded-[28px] border border-white/10 bg-white/5 p-6 sm:p-8">
+          <div className="flex flex-wrap justify-center gap-2">
+            <StatusPill label="Sala nao encontrada" variant="danger" />
+            <StatusPill label={attemptedCode} variant="active" />
+          </div>
+          <h2 className="mt-4 panel-title">Essa sala nao existe mais ou ainda nao foi criada</h2>
+          <p className="mt-3 panel-copy">
+            {roomError?.message || "Nao foi possivel entrar com esse link."}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-white/68">
+            Confira se o codigo esta correto ou crie uma nova sala para compartilhar um novo link.
+          </p>
+          <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+            <PrimaryAction variant="success" size="md" onClick={handleRoomNotFoundTryAnotherCode}>
+              Tentar outro codigo
+            </PrimaryAction>
+            <PrimaryAction variant="active" size="md" onClick={handleRoomNotFoundReturnHome}>
+              Voltar para inicio
+            </PrimaryAction>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderWaitingPlayerScreen() {
     return (
       <div className="grid gap-4 lg:grid-cols-[1.05fr,0.95fr]">
@@ -858,7 +958,7 @@ export default function App() {
                 <p className="eyebrow">Convite</p>
                 <h2 className="mt-3 panel-title">Aguardando o segundo jogador</h2>
                 <p className="mt-3 panel-copy">
-                  Compartilhe o link da sala e ajuste seu nome enquanto a outra pessoa entra.
+                  Compartilhe o link da sala enquanto a outra pessoa entra.
                 </p>
               </div>
               <StatusPill label="1 de 2 jogadores" variant="active" />
@@ -875,13 +975,6 @@ export default function App() {
                 </PrimaryAction>
               </div>
             </div>
-
-            <NameEditor
-              value={draftName}
-              onChange={setDraftName}
-              onSave={saveName}
-              disabled={!currentPlayer}
-            />
 
             <div className="grid gap-3">
               <ReadySummaryCard title="Voce" name={currentPlayer?.name || "Sua vaga"} status="Na sala" variant="success" />
@@ -900,7 +993,7 @@ export default function App() {
               </p>
             </div>
             <div className="grid gap-3">
-              <StatusPill label="Nome editavel" variant="success" size="sm" />
+              <StatusPill label="Nome no lobby (2 jogadores)" variant="active" size="sm" />
               <StatusPill label="Link pronto para compartilhar" variant="active" size="sm" />
               <StatusPill label="Sala ativa" variant="active" size="sm" />
             </div>
@@ -938,6 +1031,13 @@ export default function App() {
               <ReadySummaryCard title="Jogador 1" name={gameState?.players.find((player) => player.slot === 0)?.name || "Jogador 1"} status={gameState?.players.find((player) => player.slot === 0)?.ready ? "Pronto" : "Aguardando"} variant={gameState?.players.find((player) => player.slot === 0)?.ready ? "success" : "default"} />
               <ReadySummaryCard title="Jogador 2" name={gameState?.players.find((player) => player.slot === 1)?.name || "Jogador 2"} status={gameState?.players.find((player) => player.slot === 1)?.ready ? "Pronto" : "Aguardando"} variant={gameState?.players.find((player) => player.slot === 1)?.ready ? "success" : "default"} />
             </div>
+
+            <NameEditor
+              value={draftName}
+              onChange={setDraftName}
+              onSave={saveName}
+              disabled={!currentPlayer || isSpectator}
+            />
           </div>
         </SurfaceCard>
 
@@ -1147,6 +1247,9 @@ export default function App() {
   function renderResultScreen() {
     if (!gameState?.result) return null;
 
+    const historyEntries = gameState.history;
+    const enableHistoryScroll = historyEntries.length > 2;
+
     return (
       <div className="grid gap-4">
         {gameState.mode === "rps" ? (
@@ -1177,6 +1280,60 @@ export default function App() {
             </div>
           </SurfaceCard>
         ) : null}
+
+        <SurfaceCard size="lg" className="bg-black/10">
+          <div className="relative z-10 flex flex-col gap-4 text-left">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="eyebrow">Historico</p>
+                <h3 className="mt-2 font-display text-3xl text-white">Ultimas partidas da sala</h3>
+              </div>
+              <StatusPill label={`${historyEntries.length} registro(s)`} variant="active" size="sm" />
+            </div>
+
+            {historyEntries.length === 0 ? (
+              <div className="rounded-[22px] border border-white/10 bg-white/5 p-5">
+                <p className="text-sm leading-6 text-white/74">
+                  Ainda nao ha partidas no historico desta sala.
+                </p>
+              </div>
+            ) : (
+              <div className={enableHistoryScroll ? "max-h-[25rem] overflow-y-auto pr-2" : ""}>
+                <div className="grid gap-3">
+                {historyEntries.map((entry) => {
+                  const winnerLabel = entry.winnerName ? `${entry.winnerName} venceu` : "Empate";
+                  const firstPlayer = entry.players.find((player) => player.slot === 0) || entry.players[0];
+                  const secondPlayer = entry.players.find((player) => player.slot === 1) || entry.players[1];
+
+                  return (
+                    <div key={`${entry.round}-${entry.createdAt}`} className="rounded-[22px] border border-white/10 bg-white/5 p-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex flex-wrap gap-2">
+                          <StatusPill label={`Round ${entry.round}`} variant="active" size="sm" />
+                          <StatusPill label={formatModeLabel(entry.mode)} variant="default" size="sm" />
+                          <StatusPill label={getHistoryReasonLabel(entry.reason)} variant={entry.reason === "submitted" ? "success" : "active"} size="sm" />
+                        </div>
+                        <p className="text-sm font-semibold text-white">{winnerLabel}</p>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 text-sm leading-6 text-white/78">
+                        {entry.mode === "odd-even" ? (
+                          <p className="rounded-[16px] border border-white/10 bg-black/20 px-3 py-2">
+                            Soma {entry.sum ?? "--"} | {formatParityLabel(entry.parity)}
+                          </p>
+                        ) : null}
+                        {firstPlayer ? <p>{formatHistoryPlayerSelection(firstPlayer, entry.mode)}</p> : null}
+                        {secondPlayer ? <p>{formatHistoryPlayerSelection(secondPlayer, entry.mode)}</p> : null}
+                        <p className="text-white/62">{getResultCopy(entry.reason)}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+                </div>
+              </div>
+            )}
+          </div>
+        </SurfaceCard>
 
         <SurfaceCard variant="success" size="md" className="bg-black/10">
           <div className="relative z-10 flex flex-col gap-4 text-left sm:flex-row sm:items-center sm:justify-between">
@@ -1286,6 +1443,8 @@ export default function App() {
                     ? renderHomeScreen()
                     : appView === "joining"
                       ? renderJoiningScreen()
+                      : appView === "room-not-found"
+                        ? renderRoomNotFoundScreen()
                       : renderInRoomContent()}
                 </div>
               </SurfaceCard>
