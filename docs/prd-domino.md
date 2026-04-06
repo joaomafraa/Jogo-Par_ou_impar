@@ -2234,3 +2234,452 @@ Se quiser, posso agora juntar:
 
 👉 TODOS os seus PRDs + esse aqui
 e te entregar um PROMPT FINAL MONSTRO (nível produção real) pronto pro Codex gerar o jogo inteiro.
+
+Perfeito — agora você vai adicionar uma melhoria de nível profissional no seu PRD, baseada nessa mecânica do Paciencia Domino Online, sem perder o estilo do Dominoes 365.
+
+Vou te entregar isso no formato PRD pronto pra colar 👇
+
+⸻
+
+📄 🔥 ADIÇÃO AO PRD — SISTEMA DE REFLOW INTELIGENTE (HYBRID LAYOUT ENGINE)
+
+⸻
+
+14) 🧠 SISTEMA DE REFLOW INTELIGENTE (INSPIRAÇÃO PACIENCIA + DOMINO 365)
+
+⸻
+
+14.1 🎯 OBJETIVO
+
+Aprimorar o layout da mesa para:
+	•	evitar overflow da tela
+	•	manter centralização constante
+	•	melhorar uso do espaço
+	•	preservar continuidade visual
+	•	manter sensação física do dominó
+
+⸻
+
+14.2 🧠 PRINCÍPIO CENTRAL
+
+layout = função(chain, viewport)
+
+👉 O layout deve ser recalculado completamente a cada jogada
+👉 Nunca armazenar posições fixas
+
+⸻
+
+14.3 🔄 REFLOW GLOBAL OBRIGATÓRIO
+
+Sempre que o estado muda:
+	1.	recalcular layout completo
+	2.	recalcular bounding box
+	3.	aplicar centralização
+	4.	animar TODAS as peças
+
+⸻
+
+14.4 📐 CENTRALIZAÇÃO DINÂMICA AVANÇADA
+
+Após gerar o layout:
+
+offsetX = viewport.centerX - bounding.centerX
+offsetY = viewport.centerY - bounding.centerY
+
+Aplicar offset em TODAS as peças.
+
+⸻
+
+14.5 📦 CONTROLE DE BOUNDING (ANTI-OVERFLOW)
+
+Antes de posicionar cada peça:
+
+if (willOverflow(nextPosition, viewport)):
+    direction = rotateDirection(direction)
+
+⚠️ Deve ocorrer ANTES de posicionar a peça
+
+⸻
+
+14.6 🔥 COMPRESSÃO DINÂMICA (INSPIRAÇÃO PACIENCIA)
+
+Objetivo:
+
+Evitar que a mesa fique grande demais
+
+⸻
+
+Regra:
+
+chainLength = number of pieces
+
+if chainLength > 20:
+    GAP = 3
+
+if chainLength > 30:
+    GAP = 2
+
+if chainLength > 40:
+    GAP = 1
+
+
+⸻
+
+Regras obrigatórias:
+	•	compressão deve ser gradual
+	•	nunca quebrar encaixe visual
+	•	peças continuam conectadas
+	•	não alterar largura/altura da peça
+
+⸻
+
+14.7 🧭 SMART OVERFLOW (CONTROLE INTELIGENTE)
+
+Ao invés de esperar sair da tela:
+
+threshold = 90% da largura/altura
+
+if nextPosition aproxima do limite:
+    direction = rotateDirection(direction)
+
+
+⸻
+
+14.8 🧩 PRESERVAÇÃO DE CONTINUIDADE (CRÍTICO)
+
+Mesmo com reflow:
+	•	peças devem permanecer conectadas
+	•	distância visual = 0
+	•	nenhuma sobreposição
+	•	nenhuma quebra na cadeia
+
+⸻
+
+14.9 🎬 ANIMAÇÃO DO REFLOW
+
+Para TODAS as peças:
+
+animate(from: oldPosition, to: newPosition)
+
+Config:
+	•	duration: 200–300ms
+	•	easing: ease-out
+
+⸻
+
+14.10 ⚠️ REGRAS PROIBIDAS
+
+❌ NÃO:
+	•	teleportar peças
+	•	quebrar snake layout
+	•	reposicionar manualmente
+	•	usar grid fixo
+	•	pular animação
+
+⸻
+
+14.11 🧪 TESTES OBRIGATÓRIOS
+	•	50+ peças
+	•	múltiplas curvas
+	•	crescimento dos dois lados
+	•	tela pequena (mobile)
+	•	mudanças rápidas de estado
+
+⸻
+
+14.12 🧠 RESULTADO ESPERADO
+	•	mesa sempre centralizada
+	•	nunca sai da tela
+	•	uso eficiente do espaço
+	•	movimento fluido
+	•	aparência profissional
+	•	comportamento híbrido (365 + Paciencia)
+
+⸻
+
+🧠 RESUMO DO QUE VOCÊ ACABOU DE ADICIONAR
+
+👉 Você acabou de colocar no seu PRD:
+	•	compressão inteligente
+	•	centralização perfeita
+	•	controle real de overflow
+	•	reflow nível AAA
+
+⸻
+
+🚀 IMPACTO REAL
+
+Com isso:
+
+👉 seu jogo deixa de ser:
+	•	“igual Domino 365”
+
+👉 e passa a ser:
+	•	melhor otimizado que muitos dominós online
+
+⸻
+
+Se quiser, próximo passo eu posso:
+
+👉 integrar essa seção direto no seu PROMPT FINAL MONSTRO
+👉 ou revisar teu PRD completo pra deixar nível produção real mesmo
+
+Perfeito — agora vou te entregar um PRD de regra isolado, no nível técnico certo pra colar direto no teu documento, sem quebrar nada do que você já fez.
+
+Isso aqui tá escrito no padrão que IA (Codex) entende sem ambiguidade.
+
+⸻
+
+📄 PRD — REGRA DE EMPATE COM MULTIPLICADOR (X2) E REINÍCIO COM [6|6]
+
+⸻
+
+1) 🎯 OBJETIVO
+
+Definir o comportamento do sistema quando uma rodada termina em empate após jogo trancado (blocked game).
+
+Essa regra introduz:
+	•	multiplicador de pontuação para a próxima rodada
+	•	redefinição do jogador inicial baseada na peça [6|6]
+
+⸻
+
+2) 🧠 DEFINIÇÃO DE EMPATE
+
+Um empate ocorre quando:
+
+Durante a resolução de um jogo trancado:
+	•	dois ou mais jogadores possuem a menor soma de pips
+	•	e esses jogadores pertencem a times diferentes
+
+⸻
+
+Formalização:
+
+isTie = winners.some(w => w.team !== winners[0].team)
+
+
+⸻
+
+3) ⚠️ CONDIÇÃO DE ATIVAÇÃO
+
+A regra deve ser ativada APENAS quando:
+	•	o jogo está trancado (4 passes consecutivos)
+	•	a menor pontuação individual está empatada entre equipes diferentes
+
+⸻
+
+4) 🔥 EFEITOS DO EMPATE
+
+Quando ocorrer empate:
+
+4.1 Nenhuma equipe pontua
+
+// NÃO chamar awardPoints
+
+
+⸻
+
+4.2 Ativar multiplicador de pontuação
+
+state.matchConfig.tieMultiplier = 2
+
+
+⸻
+
+4.3 Forçar início com peça específica
+
+state.matchConfig.forceStarterPiece = {
+  a: 6,
+  b: 6
+}
+
+
+⸻
+
+4.4 Encerrar rodada
+
+state.status = "FINISHED_ROUND"
+
+
+⸻
+
+5) 🚀 INÍCIO DA PRÓXIMA RODADA
+
+Na fase de distribuição (DEALING):
+
+⸻
+
+5.1 Regra obrigatória
+
+Após distribuir as peças:
+
+👉 O sistema deve procurar qual jogador possui [6|6]
+
+⸻
+
+5.2 Algoritmo
+
+function findStarterPlayer(players: Player[]): PlayerId {
+  for (const player of players) {
+    const hasDoubleSix = player.hand.some(p => p.a === 6 && p.b === 6)
+    
+    if (hasDoubleSix) {
+      return player.id
+    }
+  }
+
+  throw new Error("Nenhum jogador possui [6|6] — estado inválido")
+}
+
+
+⸻
+
+5.3 Aplicação
+
+if (state.matchConfig.forceStarterPiece) {
+  state.turnIndex = indexOfPlayerWith[6|6]
+}
+
+
+⸻
+
+5.4 Restrição obrigatória
+
+No primeiro turno:
+
+👉 O jogador DEVE jogar [6|6]
+
+if (firstMove && playerHas[6|6]) {
+  allowOnly([6|6])
+}
+
+
+⸻
+
+6) 💰 APLICAÇÃO DO MULTIPLICADOR
+
+O multiplicador deve ser aplicado somente na próxima vitória válida.
+
+⸻
+
+6.1 Regra
+
+finalPoints = basePoints * state.matchConfig.tieMultiplier
+
+
+⸻
+
+6.2 Exemplo
+
+Tipo de vitória	Base	Multiplicador	Resultado
+Simples	1	x2	2
+Carroça	2	x2	4
+Lá-e-lô	3	x2	6
+Cruzada	4	x2	8
+
+
+⸻
+
+7) 🔄 RESET DO MULTIPLICADOR
+
+Após uma rodada com vitória válida:
+
+state.matchConfig.tieMultiplier = 1
+state.matchConfig.forceStarterPiece = null
+
+
+⸻
+
+8) ⚠️ EDGE CASES (CRÍTICO)
+
+⸻
+
+E1 — Múltiplos empates consecutivos
+
+Se ocorrer outro empate:
+
+state.matchConfig.tieMultiplier *= 2
+
+Exemplo:
+	•	1º empate → x2
+	•	2º empate → x4
+	•	3º empate → x8
+
+⸻
+
+E2 — Jogador sem [6|6]
+
+NUNCA deve acontecer.
+
+Se acontecer:
+
+throw Error("Estado inválido: peça [6|6] não encontrada")
+
+
+⸻
+
+E3 — Vitória após empate
+
+Multiplicador deve ser aplicado ANTES do reset.
+
+⸻
+
+9) 🧪 TESTES OBRIGATÓRIOS
+
+⸻
+
+Teste 1 — Empate ativa regra
+
+expect(state.matchConfig.tieMultiplier).toBe(2)
+expect(state.matchConfig.forceStarterPiece).toEqual({6,6})
+
+
+⸻
+
+Teste 2 — Jogador correto inicia
+
+expect(turnIndex).toBe(playerWithDoubleSix)
+
+
+⸻
+
+Teste 3 — Multiplicador aplicado
+
+expect(finalScore).toBe(baseScore * 2)
+
+
+⸻
+
+Teste 4 — Reset após vitória
+
+expect(tieMultiplier).toBe(1)
+expect(forceStarterPiece).toBe(null)
+
+
+⸻
+
+10) 🧠 REGRA FINAL (RESUMO PARA O CODEX)
+
+Se um jogo trancado terminar em empate entre equipes:
+	•	ninguém pontua
+	•	próxima rodada vale x2
+	•	jogador com [6|6] inicia obrigatoriamente
+	•	multiplicador aplica na próxima vitória
+	•	após vitória → reset
+
+⸻
+
+🔥 IMPORTANTE (INTEGRAÇÃO COM SEU PRD)
+
+Isso aqui você deve colar:
+
+👉 logo após a seção de JOGO TRANCADO (BLOCKED GAME)
+ou
+👉 dentro de matchConfig / regras avançadas
+
+⸻
+
+Se quiser, no próximo passo eu posso:
+	•	integrar ISSO direto no teu PRD gigante sem quebrar nada
+	•	ou revisar tua lógica pra garantir que o Codex não bugue essa parte (essa aqui é uma das que mais dá erro)
