@@ -1892,3 +1892,345 @@ function resolveBlockedGame(state: GameState) {
 
 ### 🧠 INSTRUÇÃO PARA A IA (CODEX / COPILOT)
 *Aja como um Senior Game Developer. Implemente o state manager utilizando as assinaturas e algoritmos descritos acima. Este módulo deve ser agnóstico em relação à UI, expondo apenas o `GameState` e aceitando intenções de jogada (`playPiece(playerId, pieceId, side)`). Gere testes unitários (Jest/Vitest) obrigatórios para as lógicas de `calculateWinScore`, `validateStartingHands` e `resolveBlockedGame`.*
+
+Perfeito — vou transformar tudo que falei em um PRD técnico focado em QUALIDADE AAA (nível Dominoes 365), feito especificamente para o Codex evitar os erros que deixam o jogo “amador”.
+
+Esse documento NÃO repete o que você já fez — ele complementa com o que falta pra ficar profissional.
+
+⸻
+
+📄 PRD TÉCNICO — QUALIDADE VISUAL, ANIMAÇÃO E PERCEPÇÃO (ANTI-BUG / NÍVEL 365)
+
+⸻
+
+1) 🎯 OBJETIVO
+
+Garantir que o jogo:
+	•	tenha sensação de fluidez real
+	•	pareça polido (não acadêmico)
+	•	mantenha consistência visual absoluta
+	•	replique a experiência de jogos online modernos de dominó  ￼
+
+⸻
+
+2) 🧠 PRINCÍPIO CENTRAL
+
+❗ O usuário NÃO percebe código — ele percebe MOVIMENTO
+
+⸻
+
+REGRA GLOBAL
+
+Estado → Layout → Diferença → Animação → Percepção
+
+Se qualquer etapa falhar → jogo parece bugado
+
+⸻
+
+3) 🎬 SISTEMA DE ANIMAÇÃO (CRÍTICO)
+
+⸻
+
+3.1 Pipeline obrigatório
+
+oldLayout
+newLayout
+
+diff = calcular diferença
+
+animar(diff)
+
+
+⸻
+
+3.2 PROIBIDO
+
+❌ atualizar posição direto
+❌ “teleportar” peça
+❌ animar só peça nova
+
+⸻
+
+3.3 TIPOS DE ANIMAÇÃO
+
+A) Entrada de peça
+	•	origem: mão do jogador
+	•	destino: posição final da mesa
+
+⸻
+
+B) REFLOW GLOBAL (OBRIGATÓRIO)
+
+👉 TODAS as peças se movem
+
+for piece in ALL:
+  animate(old → new)
+
+
+⸻
+
+3.4 CONFIGURAÇÃO
+
+duration: 220–280ms
+easing: cubic-bezier(0.25, 0.8, 0.25, 1)
+
+
+⸻
+
+3.5 MICRO-FÍSICA (OPCIONAL — NÍVEL AAA)
+
+Adicionar leve “peso”:
+
+scale: 1 → 1.05 → 1
+
+ou
+
+translateY: +2px → 0
+
+
+⸻
+
+4) 🧱 SISTEMA DE CONTINUIDADE VISUAL
+
+⸻
+
+4.1 REGRA ABSOLUTA
+
+👉 Peças DEVEM parecer conectadas fisicamente
+
+⸻
+
+4.2 VALIDAÇÕES
+	•	sem gap visível
+	•	sem sobreposição
+	•	alinhamento perfeito eixo X/Y
+
+⸻
+
+4.3 TESTE
+
+distância entre peças == 0 visualmente
+
+
+⸻
+
+5) 📐 LAYOUT PROFISSIONAL (ANTI-BUG)
+
+⸻
+
+5.1 REGRAS CRÍTICAS
+
+❌ nunca posicionar incrementalmente
+✔️ sempre recalcular layout completo
+
+⸻
+
+5.2 CENTRALIZAÇÃO DINÂMICA (OBRIGATÓRIA)
+
+bounding = calcular bounding da cadeia
+
+offsetX = centerX - bounding.centerX
+offsetY = centerY - bounding.centerY
+
+aplicar offset em TODAS peças
+
+
+⸻
+
+5.3 RESULTADO ESPERADO
+	•	mesa sempre centralizada
+	•	crescimento equilibrado
+	•	nunca “puxa” para um lado
+
+⸻
+
+6) ⚠️ CONTROLE DE OVERFLOW (ANTI-BUG REAL)
+
+⸻
+
+6.1 PROBLEMA
+
+Sem isso:
+	•	mesa sai da tela
+	•	layout quebra
+
+⸻
+
+6.2 SOLUÇÃO
+
+if willOverflow(nextPosition):
+    direction = rotate(direction)
+
+ANTES de posicionar
+
+⸻
+
+7) 🎯 FEEDBACK VISUAL (O QUE FALTA PRA FICAR AAA)
+
+⸻
+
+7.1 HIGHLIGHT DE JOGADA
+
+Quando jogador seleciona peça:
+	•	destacar lados válidos
+	•	brilho leve
+
+⸻
+
+7.2 HOVER / TOUCH
+	•	peça levanta levemente
+	•	escala: 1 → 1.05
+
+⸻
+
+7.3 TURNO ATIVO
+	•	glow no jogador atual
+	•	indicador claro
+
+⸻
+
+7.4 PEÇA INVÁLIDA
+
+👉 NÃO travar seco
+	•	leve shake
+	•	feedback visual
+
+⸻
+
+8) 🔊 SISTEMA DE SOM (IMPACTO REAL)
+
+⸻
+
+8.1 EVENTOS
+	•	peça colocada → “toc”
+	•	turno → clique leve
+	•	vitória → som curto
+
+⸻
+
+8.2 REGRA
+
+👉 som sincronizado com animação
+
+⸻
+
+9) 🧩 DESIGN DAS PEÇAS (PERCEPÇÃO)
+
+⸻
+
+9.1 DETALHES QUE IMPORTAM
+	•	sombra leve
+	•	borda suave
+	•	contraste alto
+
+⸻
+
+9.2 DUPLAS
+
+👉 devem “quebrar o padrão visual”
+	•	rotação perpendicular
+	•	destaque leve
+
+⸻
+
+10) ⚠️ ERROS CRÍTICOS (PROIBIDOS)
+
+⸻
+
+VISUAIS
+
+❌ peça desalinhada
+❌ pontinho fora do padrão
+❌ gap entre peças
+❌ curva bugada
+
+⸻
+
+ANIMAÇÃO
+
+❌ peça teleportando
+❌ só nova peça animando
+❌ easing linear
+
+⸻
+
+UX
+
+❌ sem feedback de turno
+❌ clique sem resposta
+❌ jogada inválida silenciosa
+
+⸻
+
+11) 🧪 TESTES DE QUALIDADE VISUAL
+
+⸻
+
+CENÁRIOS OBRIGATÓRIOS
+	•	50+ peças na mesa
+	•	múltiplas curvas
+	•	tela mobile
+	•	jogadas rápidas
+	•	reflow contínuo
+
+⸻
+
+CHECKLIST FINAL
+
+[ ] mesa sempre centralizada
+[ ] nenhuma peça sobreposta
+[ ] animação suave
+[ ] reflow funcionando
+[ ] peças sempre conectadas
+[ ] nenhuma quebra visual
+
+
+⸻
+
+12) 🚀 INTEGRAÇÃO COM SUA ENGINE
+
+⸻
+
+REGRA DE OURO
+
+👉 UI NUNCA altera estado
+
+Engine → estado
+UI → render(state)
+
+
+⸻
+
+PIPELINE FINAL
+
+applyMove()
+→ novo estado
+→ layout()
+→ diff()
+→ animate()
+
+
+⸻
+
+🧠 RESUMO FINAL
+
+Se o Codex seguir isso:
+
+👉 o jogo vai parecer:
+	•	fluido
+	•	responsivo
+	•	natural
+	•	profissional
+
+⸻
+
+🔥 FRASE FINAL (PRO CODEX)
+
+“Não basta funcionar. Cada transição deve parecer física, contínua e previsível. O usuário deve sentir que a mesa é um objeto real, não uma lista de elementos.”
+
+⸻
+
+Se quiser, posso agora juntar:
+
+👉 TODOS os seus PRDs + esse aqui
+e te entregar um PROMPT FINAL MONSTRO (nível produção real) pronto pro Codex gerar o jogo inteiro.
