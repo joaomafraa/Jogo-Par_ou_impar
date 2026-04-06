@@ -1460,3 +1460,260 @@ Agora você tem:
 
 ⸻
 
+ 📄 PRD TÉCNICO DEFINITIVO — MOTOR DE REGRAS E MÁQUINA DE ESTADOS (DOMINÓ 2v2)
+
+⸻
+
+## 1) 🎯 OBJETIVO FORMAL E ESCOPO
+
+Implementar o núcleo lógico (`GameManager` / `State Reducer`) de um jogo de dominó multiplayer 2v2 (Duplas). O escopo exige:
+1. Controle de fluxo e turnos baseados em parceiros sentados frente a frente.
+2. Tratamento matemático de pontuação com regras brasileiras avançadas: Batida Simples, Carroça, Lá-e-lô e Cruzada.
+3. Resolução de exceções de mão na distribuição (4, 5 ou 6 carroças).
+4. Cálculo individual (por jogador) de pips para resolução de Jogo Trancado (Fechado).
+5. Gerenciamento do "Dorme" (4 peças sobressalentes, com controle de visibilidade estrito).
+6. A partida não tem "teto cravado" de 6 pontos; ganha quem atingir `>= 6` pontos.
+
+⸻
+
+## 2) 🧠 ESTRUTURA GLOBAL DE ESTADO (STATE TYPES)
+
+O motor deve ser puramente funcional e derivar do seguinte estado (Tipagem TypeScript estrita):
+
+```typescript
+type Team = "TEAM_A" | "TEAM_B";
+type PlayerId = string;
+
+type Piece = {
+  id: string;
+  a: number; // 0-6
+  b: number; // 0-6
+}
+
+type Player = {
+  id: PlayerId;
+  team: Team;
+  hand: Piece[];
+  position: 0 | 1 | 2 | 3; // Parceiros sentam frente a frente: A(0), B(1), A(2), B(3)
+}
+
+type DormeState = {
+  pieces: Piece[]; // SEMPRE contém exatamente 4 peças
+  isVisible: boolean; // false = viradas para baixo; true = 4 carroças expostas para todos verem
+}
+
+type GameState = {
+  status: "DEALING" | "PLAYING" | "FINISHED_ROUND" | "FINISHED_MATCH";
+  players: Player[];
+  dorme: DormeState;
+  board: {
+    chain: any[]; // (Gerenciado pela Engine Visual do PRD anterior)
+    leftValue: number | null;
+    rightValue: number | null;
+  };
+  turnIndex: number; // Quem joga agora (0 a 3)
+  
+  scores: {
+    TEAM_A: number; // Vence o Match quem atingir >= 6
+    TEAM_B: number;
+  };
+  
+  matchConfig: {
+    targetScore: number; // Padrão: 6
+    tieMultiplier: number; // Multiplicador de pontos da rodada (1 normal, 2 ou mais se houve empates anteriores)
+    forceStarterPiece: Piece | null; // Se for a primeira rodada ou pós-empate, [6|6] começa
+  };
+}
+```
+
+⸻
+
+## 3) 🎲 DISTRIBUIÇÃO (DEALING) E ÁREA DO "DORME"
+
+### 3.1 Regra de Distribuição Matemática
+1. Instanciar as 28 peças do jogo (`[0|0]` a `[6|6]`).
+2. Embaralhar usando algoritmo seguro (Fisher-Yates).
+3. Distribuir exatamente **6 peças** para `Player[0]`, `Player[1]`, `Player[2]` e `Player[3]`.
+4. As **4 peças restantes** vão obrigatoriamente para `gameState.dorme.pieces`.
+5. `gameState.dorme.isVisible` é setado para `false`.
+
+### 3.2 Validador de Exceções de Mão (CRÍTICO)
+Antes de liberar o `turnIndex` 1, o motor deve varrer a mão de cada jogador.
+
+```typescript
+function validateStartingHands(state: GameState): "CONTINUE" | "RESHUFFLE" | "INSTANT_WIN" {
+  for (let player of state.players) {
+    const doubles = player.hand.filter(p => p.a === p.b);
+    const count = doubles.length;
+
+    // REGRA DE 4 CARROÇAS: O jogador é forçado a pegar o dorme
+    if (count === 4) {
+      const oldDorme = [...state.dorme.pieces];
+      
+      // As 4 carroças vão para o dorme e ficam visíveis
+      state.dorme.pieces = [...doubles];
+      state.dorme.isVisible = true; 
+      
+      // Retira as carroças da mão e injeta o dorme antigo
+      player.hand = player.hand.filter(p => p.a !== p.b);
+      player.hand.push(...oldDorme);
+      
+      return "CONTINUE"; 
+    }
+    
+    // REGRA DE 5 CARROÇAS: Jogo anulado, re-embaralha
+    if (count === 5) {
+      return "RESHUFFLE";
+    }
+    
+    // REGRA DE 6 CARROÇAS: Vitória instantânea (Batida Simples)
+    if (count === 6) {
+      awardPoints(state, player.team, 1 * state.matchConfig.tieMultiplier);
+      return "INSTANT_WIN";
+    }
+  }
+  return "CONTINUE";
+}
+```
+
+⸻
+
+## 4) 🚀 REGRA DE INÍCIO E CONTROLE DE TURNOS
+
+### 4.1 Quem começa?
+*   **Primeira rodada do Match OU após um jogo trancado que empatou:** O jogador que tiver o `[6|6]` (Dozão) em sua mão começa obrigatoriamente. O motor não deve permitir que ele jogue outra peça em seu primeiro turno.
+*   **Rodadas normais:** Começa o jogador da dupla que venceu a rodada anterior. (A dupla escolhe quem sai, ou adota-se a regra de rodízio: "o parceiro à direita do último que bateu começa").
+
+### 4.2 Skip de Turno Automático
+Se chegar a vez do `Player[i]` e ele não possuir nenhuma peça na mão que combine com `leftValue` ou `rightValue`, o motor deve pular automaticamente o turno (`turnIndex = (turnIndex + 1) % 4`), emitindo um evento `PLAYER_PASSED`.
+
+⸻
+
+## 5) 🏆 MÁQUINA DE PONTUAÇÃO (CÁLCULO DE BATIDA)
+
+Um jogador "Bate" (vence a rodada) no momento exato em que seu array de mão fica vazio (`hand.length === 0`). O motor precisa inspecionar a peça que causou a vitória e o estado da mesa antes do encaixe.
+
+### 5.1 Algoritmo Exato (Lá-e-Lô e Cruzada)
+Atenção Codex: Não trate pontuação com `if/else` solto. Use esta lógica matemática estrita:
+
+```typescript
+function calculateWinScore(playedPiece: Piece, stateBeforePlay: GameState): number {
+  const isDouble = (playedPiece.a === playedPiece.b);
+  const leftValue = stateBeforePlay.board.leftValue;
+  const rightValue = stateBeforePlay.board.rightValue;
+  
+  // Verifica se a peça é útil SIMULTANEAMENTE nos dois lados da mesa
+  const fitsLeft = (playedPiece.a === leftValue || playedPiece.b === leftValue);
+  const fitsRight = (playedPiece.a === rightValue || playedPiece.b === rightValue);
+  
+  const matchesBothEnds = fitsLeft && fitsRight;
+
+  if (matchesBothEnds) {
+    if (isDouble) {
+      return 4; // BATIDA CRUZADA: Carroça fechando os dois lados
+    } else {
+      return 3; // BATIDA LÁ-E-LÔ: Peça comum fechando os dois lados
+    }
+  } else {
+    if (isDouble) {
+      return 2; // BATIDA DE CARROÇA (Em apenas um lado)
+    } else {
+      return 1; // BATIDA SIMPLES
+    }
+  }
+}
+```
+
+⸻
+
+## 6) 🔒 JOGO TRANCADO (BLOCKED) E CONTAGEM INDIVIDUAL
+
+O jogo tranca (fecha) se o turno pular 4 vezes consecutivas (os 4 jogadores não têm peça válida). 
+
+### 6.1 Regra de Contagem Inegociável
+A vitória de um jogo trancado **NÃO É** da equipe que somar menos pontos. A vitória pertence ao **JOGADOR INDIVIDUAL** que possuir a menor quantidade absoluta de pips em sua própria mão. A dupla dele ganha a rodada (1 ponto).
+
+### 6.2 Algoritmo de Resolução de Empate
+
+```typescript
+function resolveBlockedGame(state: GameState) {
+  // 1. Calcula a soma de pips (pontos) INDIVIDUALMENTE
+  const playerScores = state.players.map(player => {
+    const sum = player.hand.reduce((acc, piece) => acc + piece.a + piece.b, 0);
+    return { id: player.id, team: player.team, score: sum };
+  });
+
+  // 2. Acha a menor nota da mesa (Ex: J1=10, J2=5, J3=15, J4=5 -> minScore = 5)
+  const minScore = Math.min(...playerScores.map(p => p.score));
+
+  // 3. Filtra quem bateu a menor nota
+  const winners = playerScores.filter(p => p.score === minScore);
+
+  // 4. Se houver vencedores de times DIFERENTES, é Empate Global.
+  const isTie = winners.some(w => w.team !== winners[0].team);
+
+  if (isTie) {
+    // EMPATE GLOBAL: Ninguém ganha pontos.
+    // Próxima rodada deve recomeçar do [6|6]
+    state.matchConfig.forceStarterPiece = { a: 6, b: 6 };
+    // OPCIONAL DE REGRA LOCAL: state.matchConfig.tieMultiplier = 2;
+  } else {
+    // VITÓRIA LIMPA: Um jogador ganhou, ou dois da mesma dupla empataram na menor nota
+    const winningTeam = winners[0].team;
+    awardPoints(state, winningTeam, 1 * state.matchConfig.tieMultiplier);
+    
+    // Reseta o multiplicador
+    state.matchConfig.tieMultiplier = 1; 
+  }
+  
+  state.status = "FINISHED_ROUND";
+}
+```
+
+⸻
+
+## 7) 🛑 CONDIÇÃO DE MATCH WIN (FIM DO JOGO GERAL)
+
+A partida vai até 6 pontos. Porém, não deve existir trava que impeça de passar de 6.
+
+### 7.1 Atribuição de Pontos
+```typescript
+function awardPoints(state: GameState, team: Team, points: number) {
+  state.scores[team] += points;
+
+  // A condição deve ser >= alvo, pois uma equipe com 5 pts pode dar uma Cruzada(4) e ir a 9.
+  if (state.scores[team] >= state.matchConfig.targetScore) {
+    state.status = "FINISHED_MATCH";
+    // Dispara evento de Fim de Jogo
+  } else {
+    state.status = "FINISHED_ROUND";
+    // Prepara próximo Round
+  }
+}
+```
+
+⸻
+
+## 8) ⚠️ PREVENÇÃO DE EDGE CASES (INVARIANTES)
+
+Esses fluxos não podem quebrar:
+*   **E1:** Se um jogador tiver a peça `[3|4]` e a mesa estiver `left=3, right=5`, o `fitsRight` será falso. A peça serve apenas na esquerda. O código **NÃO DEVE** classificar como Lá-e-lô, deve ser batida simples.
+*   **E2:** Quando a regra das 4 carroças for ativada e o dorme ficar `isVisible: true`, o Front-End é que consumirá esse dado para renderizar as peças com a face para cima. O motor só cuida da boolean.
+*   **E3:** Jogadores nunca somam seus pontos na hora de resolver jogo trancado. Um parceiro com 2 pontos e outro com 50 pontos: a equipe **GANHA** se o inimigo A tiver 3 e o inimigo B tiver 4. A nota 2 vence todas individualmente.
+
+⸻
+
+## 9) 🧪 SUÍTE DE TESTES OBRIGATÓRIOS (PARA A IA GERAR)
+
+O desenvolvedor/IA deve providenciar testes Jest/Vitest cobrindo:
+1.  `calculateWinScore`: Mockar uma mesa `[4 ... 5]`. Jogar `[4|5]`. Afirmar retorno `= 3`.
+2.  `calculateWinScore`: Mockar uma mesa `[6 ... 6]`. Jogar `[6|6]`. Afirmar retorno `= 4`.
+3.  `resolveBlockedGame`: Mockar mãos `J1=3(A)`, `J2=4(B)`, `J3=100(A)`, `J4=5(B)`. Afirmar vitória do Team A.
+4.  `resolveBlockedGame`: Mockar mãos `J1=5(A)`, `J2=5(B)`. Afirmar empate, com `forceStarterPiece = [6|6]`.
+5.  `validateStartingHands`: Mockar mão com `[0|0], [1|1], [2|2], [3|3]`. Afirmar que a mão foi modificada, que `dorme` foi sobrescrito e que `dorme.isVisible = true`.
+
+⸻
+
+### 🧠 INSTRUÇÃO DIRETA PARA O CODEX/COPILOT:
+*Aja como um Senior Software Engineer. Implemente a classe GameEngine/Reducer exatamente como descrito neste PRD. O código não deve possuir ambiguidade na detecção de Lá-e-Lô e Cruzada, e a rotina de Jogo Trancado deve ser puramente individual (linha 6.2). Escreva funções puras e separadas. Priorize legibilidade e tipagem forte.*
+
